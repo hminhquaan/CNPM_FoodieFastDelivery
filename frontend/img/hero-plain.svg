@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="800" height="500" viewBox="0 0 800 500" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Minh hoạ món ăn">
+  <!-- Calm, text-free food illustration -->
+  <defs>
+    <linearGradient id="plateGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#F7F8FA"/>
+    </linearGradient>
+    <linearGradient id="eggYolk" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#F59E0B"/>
+      <stop offset="100%" stop-color="#D97706"/>
+    </linearGradient>
+    <linearGradient id="tomatoRed" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#EF4444"/>
+      <stop offset="100%" stop-color="#DC2626"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Decorative soft shapes (no text) -->
+  <circle cx="640" cy="120" r="14" fill="#9DB2CE" fill-opacity="0.35"/>
+  <circle cx="700" cy="90" r="8" fill="#3A5A9F" fill-opacity="0.18"/>
+  <circle cx="740" cy="140" r="10" fill="#9DB2CE" fill-opacity="0.25"/>
+
+  <!-- Plate -->
+  <g transform="translate(420,90)">
+    <ellipse cx="160" cy="290" rx="170" ry="16" fill="#111827" fill-opacity="0.06"/>
+    <circle cx="160" cy="220" r="160" fill="url(#plateGrad)" stroke="#E5E7EB"/>
+    <circle cx="160" cy="220" r="120" fill="#FFFFFF" stroke="#EEF2F7"/>
+
+    <!-- Lettuce leaves -->
+    <g fill="#6AA96B">
+      <path d="M90 180 C105 165, 130 165, 145 180 C130 185, 105 185, 90 180 Z"/>
+      <path d="M210 250 C225 235, 250 235, 265 250 C250 255, 225 255, 210 250 Z"/>
+      <path d="M110 260 C125 245, 150 245, 165 260 C150 265, 125 265, 110 260 Z"/>
+    </g>
+
+    <!-- Tomato slices -->
+    <g>
+      <circle cx="115" cy="205" r="20" fill="url(#tomatoRed)" stroke="#B91C1C" stroke-opacity="0.4"/>
+      <circle cx="115" cy="205" r="8" fill="#FEE2E2"/>
+      <circle cx="215" cy="195" r="18" fill="url(#tomatoRed)" stroke="#B91C1C" stroke-opacity="0.4"/>
+      <circle cx="215" cy="195" r="7" fill="#FEE2E2"/>
+    </g>
+
+    <!-- Sunny-side egg -->
+    <g>
+      <ellipse cx="175" cy="235" rx="48" ry="36" fill="#F9FAFB" stroke="#E5E7EB"/>
+      <circle cx="180" cy="235" r="16" fill="url(#eggYolk)"/>
+    </g>
+
+    <!-- Herbs -->
+    <g stroke="#6AA96B" stroke-width="3" stroke-linecap="round">
+      <path d="M140 150 C150 160, 160 165, 170 168"/>
+      <path d="M235 230 C245 240, 255 245, 265 248"/>
+    </g>
+  </g>
+
+  <!-- Cutlery (simple, minimal) -->
+  <g transform="translate(380,110)" stroke="#9CA3AF" stroke-width="6" stroke-linecap="round" fill="none">
+    <line x1="-60" y1="30" x2="-60" y2="150"/>
+    <line x1="-45" y1="30" x2="-45" y2="150"/>
+    <line x1="-30" y1="30" x2="-30" y2="150"/>
+    <line x1="-15" y1="30" x2="-15" y2="150"/>
+    <path d="M340 40 C360 40, 370 60, 370 80 C370 100, 360 120, 340 120 L340 150"/>
+  </g>
+</svg>

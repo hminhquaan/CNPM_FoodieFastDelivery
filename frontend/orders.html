@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Foodie - Đơn Hàng</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="container">
+            <div class="header-content">
+                <a href="index.html" class="logo">
+                    <i class="fas fa-utensils"></i>
+                    <span>Foodie</span>
+                </a>
+                <nav class="nav">
+                    <a href="index.html" class="nav-link">Trang chủ</a>
+                    <a href="stores.html" class="nav-link">Cửa hàng</a>
+                    <a href="orders.html" class="nav-link active">Đơn hàng</a>
+                </nav>
+                <div class="header-actions">
+                    <a href="cart.html" class="btn btn-outline btn-sm" aria-label="Giỏ hàng">
+                        <i class="fas fa-shopping-cart"></i>
+                        <span class="cart-badge" id="cartBadge">0</span>
+                    </a>
+                    <div class="user-menu" id="userMenu">
+                        <div id="guestMenu">
+                            <button class="btn btn-outline btn-sm" onclick="window.location.href='index.html'">Đăng nhập</button>
+                        </div>
+                        <div class="user-dropdown" id="userDropdown" style="display: none;">
+                            <button class="user-avatar" onclick="toggleDropdown()">
+                                <i class="fas fa-user-circle"></i>
+                                <span id="userName"></span>
+                            </button>
+                            <div class="dropdown-menu" id="dropdownMenu">
+                                <a href="orders.html"><i class="fas fa-box"></i> Đơn hàng</a>
+                                <a href="#" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Đăng xuất</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Breadcrumb -->
+    <section style="background: white; padding: 1rem 0; border-bottom: 1px solid #eee;">
+        <div class="container">
+            <div style="display: flex; align-items: center; gap: 0.5rem; color: var(--gray);">
+                <a href="index.html" style="color: var(--gray); text-decoration: none;">Trang chủ</a>
+                <i class="fas fa-chevron-right" style="font-size: 0.8rem;"></i>
+                <span>Đơn hàng của tôi</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- Orders Content -->
+    <section class="section">
+        <div class="container">
+            <h1 class="section-title">
+                <i class="fas fa-box"></i> Đơn Hàng Của Tôi
+            </h1>
+
+            <!-- Orders List -->
+            <div id="ordersContainer">
+                <!-- Loading state -->
+                <div class="empty-state">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    <h3>Đang tải đơn hàng...</h3>
+                </div>
+            </div>
+
+            <!-- Empty State -->
+            <div id="emptyOrders" style="display: none;">
+                <div class="empty-state">
+                    <i class="fas fa-box-open" style="font-size: 5rem;"></i>
+                    <h3>Chưa có đơn hàng</h3>
+                    <p>Hãy đặt món ăn yêu thích ngay!</p>
+                    <a href="stores.html" class="btn btn-primary">
+                        <i class="fas fa-store"></i> Đặt hàng ngay
+                    </a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Order Detail Modal -->
+    <div class="modal" id="orderDetailModal">
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-header">
+                <h3 class="modal-title">Chi Tiết Đơn Hàng</h3>
+                <button class="modal-close" onclick="closeOrderModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="orderDetailContent">
+                <!-- Will be filled dynamically -->
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="closeOrderModal()">Đóng</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delivery Tracking Modal -->
+    <div class="modal" id="trackingModal">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <h3 class="modal-title">
+                    <i class="fas fa-drone"></i> Theo Dõi Giao Hàng
+                </h3>
+                <button class="modal-close" onclick="closeTrackingModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="trackingContent">
+                <div class="empty-state">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    <p>Đang tải thông tin giao hàng...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/config.js"></script>
+    <script src="js/orders.js"></script>
+</body>
+</html>
+

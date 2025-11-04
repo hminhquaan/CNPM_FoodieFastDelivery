@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="800" height="500" viewBox="0 0 800 500" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Minh hoạ nhiều món ăn">
+  <!-- Rich, text-free food illustration -->
+  <defs>
+    <linearGradient id="plateGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#F7F8FA"/>
+    </linearGradient>
+    <linearGradient id="yolk" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#F59E0B"/>
+      <stop offset="100%" stop-color="#D97706"/>
+    </linearGradient>
+    <linearGradient id="tomato" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#EF4444"/>
+      <stop offset="100%" stop-color="#DC2626"/>
+    </linearGradient>
+    <linearGradient id="drink" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#9DB2CE"/>
+      <stop offset="100%" stop-color="#7C93B5"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Soft decorative dots -->
+  <circle cx="690" cy="90" r="8" fill="#3A5A9F" fill-opacity="0.18"/>
+  <circle cx="730" cy="125" r="10" fill="#9DB2CE" fill-opacity="0.32"/>
+  <circle cx="655" cy="140" r="6" fill="#9DB2CE" fill-opacity="0.22"/>
+
+  <!-- Overall shadow -->
+  <ellipse cx="520" cy="390" rx="200" ry="18" fill="#111827" fill-opacity="0.06"/>
+
+  <!-- Large plate center-right -->
+  <g transform="translate(380,90)">
+    <circle cx="160" cy="220" r="160" fill="url(#plateGrad)" stroke="#E5E7EB"/>
+    <circle cx="160" cy="220" r="120" fill="#FFFFFF" stroke="#EEF2F7"/>
+
+    <!-- Salad leaves -->
+    <g fill="#6AA96B">
+      <path d="M80 210 C100 190, 130 190, 150 210 C130 215, 100 215, 80 210 Z"/>
+      <path d="M210 270 C230 250, 255 250, 275 270 C255 275, 230 275, 210 270 Z"/>
+      <path d="M115 275 C135 255, 160 255, 180 275 C160 280, 135 280, 115 275 Z"/>
+    </g>
+
+    <!-- Tomato slices -->
+    <g>
+      <circle cx="110" cy="205" r="20" fill="url(#tomato)" stroke="#B91C1C" stroke-opacity="0.4"/>
+      <circle cx="110" cy="205" r="8" fill="#FEE2E2"/>
+      <circle cx="220" cy="195" r="18" fill="url(#tomato)" stroke="#B91C1C" stroke-opacity="0.4"/>
+      <circle cx="220" cy="195" r="7" fill="#FEE2E2"/>
+    </g>
+
+    <!-- Sunny-side egg -->
+    <g>
+      <ellipse cx="175" cy="240" rx="48" ry="36" fill="#F9FAFB" stroke="#E5E7EB"/>
+      <circle cx="180" cy="240" r="16" fill="url(#yolk)"/>
+    </g>
+
+    <!-- Herbs -->
+    <g stroke="#6AA96B" stroke-width="3" stroke-linecap="round">
+      <path d="M140 150 C150 160, 160 165, 170 168"/>
+      <path d="M235 230 C245 240, 255 245, 265 248"/>
+    </g>
+  </g>
+
+  <!-- Pizza slice (bottom left) -->
+  <g transform="translate(110,295)">
+    <path d="M0 0 L170 35 L30 90 Z" fill="#FBBF24" stroke="#EAB308"/>
+    <path d="M20 32 Q70 18, 135 34" stroke="#DC2626" stroke-width="10" stroke-linecap="round"/>
+    <circle cx="55" cy="52" r="8" fill="#9CA3AF"/>
+    <circle cx="95" cy="60" r="9" fill="#9CA3AF"/>
+  </g>
+
+  <!-- Sushi set (left) -->
+  <g transform="translate(90,200)">
+    <rect x="0" y="0" width="120" height="60" rx="10" fill="#FFFFFF" stroke="#E5E7EB"/>
+    <g transform="translate(10,10)">
+      <rect x="0" y="0" width="28" height="40" rx="6" fill="#111827"/>
+      <circle cx="14" cy="20" r="10" fill="#F59E0B"/>
+    </g>
+    <g transform="translate(46,10)">
+      <rect x="0" y="0" width="28" height="40" rx="6" fill="#111827"/>
+      <circle cx="14" cy="20" r="10" fill="#10B981"/>
+    </g>
+    <g transform="translate(82,10)">
+      <rect x="0" y="0" width="28" height="40" rx="6" fill="#111827"/>
+      <circle cx="14" cy="20" r="10" fill="#EF4444"/>
+    </g>
+  </g>
+
+  <!-- Ramen bowl (upper left) -->
+  <g transform="translate(160,80)">
+    <ellipse cx="80" cy="60" rx="80" ry="18" fill="#111827" fill-opacity="0.06"/>
+    <ellipse cx="80" cy="50" rx="75" ry="32" fill="#9DB2CE"/>
+    <ellipse cx="80" cy="48" rx="70" ry="24" fill="#FDE68A"/>
+    <!-- Noodles -->
+    <path d="M30 48 C45 44, 60 44, 75 48" stroke="#F59E0B" stroke-width="4" fill="none"/>
+    <path d="M65 50 C80 46, 95 46, 110 50" stroke="#F59E0B" stroke-width="4" fill="none"/>
+    <!-- Toppings -->
+    <circle cx="55" cy="45" r="8" fill="#10B981"/>
+    <circle cx="105" cy="46" r="8" fill="#EF4444"/>
+    <rect x="72" y="32" width="16" height="10" rx="2" fill="#FFFFFF"/>
+  </g>
+
+  <!-- Drink cup (upper right) -->
+  <g transform="translate(620,160)">
+    <rect x="-10" y="0" width="70" height="100" rx="16" fill="url(#drink)"/>
+    <rect x="-6" y="76" width="62" height="10" rx="5" fill="#FFFFFF" fill-opacity="0.7"/>
+    <rect x="10" y="-30" width="6" height="30" rx="3" fill="#9CA3AF"/>
+    <rect x="24" y="-36" width="6" height="36" rx="3" fill="#9CA3AF"/>
+  </g>
+</svg>

@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Foodie Delivery</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="container">
+            <div class="header-content">
+                <a href="index.html" class="logo">
+                    <i class="fas fa-utensils"></i>
+                    <span>Foodie</span>
+                </a>
+                <nav class="nav">
+                    <a href="index.html" class="nav-link active">Trang chủ</a>
+                    <a href="stores.html" class="nav-link">Cửa hàng</a>
+                    <a href="orders.html" class="nav-link">Đơn hàng</a>
+                </nav>
+                <div class="header-actions">
+                    <a href="cart.html" class="btn btn-outline btn-sm" aria-label="Giỏ hàng">
+                        <i class="fas fa-shopping-cart"></i>
+                        <span class="cart-badge" id="cartBadge">0</span>
+                    </a>
+                    <div class="user-menu" id="userMenu">
+                        <!-- Chưa đăng nhập -->
+                        <div id="guestMenu">
+                            <button class="btn btn-outline btn-sm" onclick="showLoginModal()">Đăng nhập</button>
+                            <button class="btn btn-primary btn-sm" onclick="showRegisterModal()">Đăng ký</button>
+                        </div>
+                        <!-- Đã đăng nhập -->
+                        <div class="user-dropdown" id="userDropdown" style="display: none;">
+                            <button class="user-avatar" onclick="toggleDropdown()">
+                                <i class="fas fa-user-circle"></i>
+                                <span id="userName"></span>
+                            </button>
+                            <div class="dropdown-menu" id="dropdownMenu">
+                                <a href="orders.html"><i class="fas fa-box"></i> Đơn hàng của tôi</a>
+                                <a href="#" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Đăng xuất</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+   <!-- Hero Section -->
+    <section class="hero">
+        <div class="container hero-grid">
+            <div class="hero-copy">
+                <h1><i class="fas fa-drone"></i>Foodie Delivery</h1>
+                <div class="search-box">
+                    <input type="text" id="searchInput" placeholder="Tìm món ăn, cửa hàng...">
+                    <button onclick="searchStores()">
+                        <i class="fas fa-search"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="hero-media">
+                <img src="img/hero-deluxe.svg" alt="Minh hoạ nhiều món ăn" class="hero-img" onerror="this.style.display='none'" />
+            </div>
+        </div>
+    </section>
+
+    <!-- Featured Stores Section -->
+    <section class="section">
+        <div class="container">
+            <h2 class="section-title">Danh Sách Cửa Hàng</h2>
+            <div class="grid grid-3" id="featuredStores">
+                <!-- Loading... -->
+                <div class="empty-state">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    <h3>Đang tải...</h3>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer style="background: #2C3E50; color: white; padding: 3rem 0; margin-top: 4rem;">
+        <div class="container">
+            <div style="text-align: center; margin-top: 2rem; padding-top: 2rem; border-top: 1px solid rgba(255,255,255,0.1);">
+                <i class="fas fa-utensils"></i>
+                    <span>Foodie Delivery</span>
+                    <p style="opacity: 0.8;">Drone Delivery</p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Login Modal -->
+    <div class="modal" id="loginModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">Đăng Nhập</h3>
+                <button class="modal-close" onclick="closeModal('loginModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="loginForm">
+                    <div class="form-group">
+                        <label class="form-label">Tên đăng nhập</label>
+                        <input type="text" class="form-control" name="username" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Mật khẩu</label>
+                        <input type="password" class="form-control" name="password" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-block">
+                        <i class="fas fa-sign-in-alt"></i> Đăng nhập
+                    </button>
+                </form>
+                <p class="text-center mt-2">
+                    Chưa có tài khoản?
+                    <a href="#" onclick="closeModal('loginModal'); showRegisterModal();" style="color: var(--primary-color);">Đăng ký ngay</a>
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Register Modal -->
+    <div class="modal" id="registerModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">Đăng Ký</h3>
+                <button class="modal-close" onclick="closeModal('registerModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="registerForm">
+                    <div class="form-group">
+                        <label class="form-label">Họ tên</label>
+                        <input type="text" class="form-control" name="fullName" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Tên đăng nhập</label>
+                        <input type="text" class="form-control" name="username" required minlength="5">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Email</label>
+                        <input type="email" class="form-control" name="email" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Số điện thoại</label>
+                        <input type="tel" class="form-control" name="phone" required pattern="[0-9]{10}">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Mật khẩu</label>
+                        <input type="password" class="form-control" name="password" required minlength="6">
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-block">
+                        <i class="fas fa-user-plus"></i> Đăng ký
+                    </button>
+                </form>
+                <p class="text-center mt-2">
+                    Đã có tài khoản?
+                    <a href="#" onclick="closeModal('registerModal'); showLoginModal();" style="color: var(--primary-color);">Đăng nhập</a>
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/config.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>
+

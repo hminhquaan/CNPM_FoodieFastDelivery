@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title >Foodie - Cửa Hàng</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <!-- Header (same as index.html) -->
+    <header class="header">
+        <div class="container">
+            <div class="header-content">
+                <a href="index.html" class="logo">
+                    <i class="fas fa-utensils"></i>
+                    <span>Foodie</span>
+                </a>
+                <nav class="nav">
+                    <a href="index.html" class="nav-link">Trang chủ</a>
+                    <a href="stores.html" class="nav-link active">Cửa hàng</a>
+                    <a href="orders.html" class="nav-link">Đơn hàng</a>
+                </nav>
+                <div class="header-actions">
+                    <a href="cart.html" class="btn btn-outline btn-sm" aria-label="Giỏ hàng">
+                        <i class="fas fa-shopping-cart"></i>
+                        <span class="cart-badge" id="cartBadge">0</span>
+                    </a>
+                    <div class="user-menu" id="userMenu">
+                        <div id="guestMenu">
+                            <button class="btn btn-outline btn-sm" onclick="window.location.href='index.html'">Đăng nhập</button>
+                        </div>
+                        <div class="user-dropdown" id="userDropdown" style="display: none;">
+                            <button class="user-avatar" onclick="toggleDropdown()">
+                                <i class="fas fa-user-circle"></i>
+                                <span id="userName"></span>
+                            </button>
+                            <div class="dropdown-menu" id="dropdownMenu">
+                                <a href="orders.html"><i class="fas fa-box"></i> Đơn hàng</a>
+                                <a href="#" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Đăng xuất</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Breadcrumb -->
+    <section style="background: white; padding: 1rem 0; border-bottom: 1px solid #eee;">
+        <div class="container">
+            <div style="display: flex; align-items: center; gap: 0.5rem; color: var(--gray);">
+                <a href="index.html" style="color: var(--gray); text-decoration: none;">Trang chủ</a>
+                <i class="fas fa-chevron-right" style="font-size: 0.8rem;"></i>
+                <span id="breadcrumb">Cửa hàng</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- Store View (when store selected) -->
+    <div id="storeView" style="display: none;">
+        <section class="section">
+            <div class="container">
+                <div class="card" style="margin-bottom: 2rem;">
+                    <div class="card-body">
+                        <div style="display: flex; gap: 2rem; align-items: start;">
+                            <img id="storeImage" src="" alt="" style="width: 150px; height: 150px; border-radius: var(--border-radius); object-fit: cover;">
+                            <div style="flex: 1;">
+                                <h1 id="storeName" style="margin-bottom: 0.5rem;"></h1>
+                                <p id="storeDescription" style="color: var(--gray); margin-bottom: 1rem;"></p>
+                                <div style="display: flex; gap: 2rem;">
+                                    <span><i class="fas fa-star text-warning"></i> 4.5</span>
+                                    <span><i class="fas fa-clock"></i> 15-30 phút</span>
+                                    <span class="text-success"><i class="fas fa-check-circle"></i> Đang mở cửa</span>
+                                </div>
+                            </div>
+                            <button class="btn btn-outline" onclick="backToStores()">
+                                <i class="fas fa-arrow-left"></i> Quay lại
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <h2 class="section-title">Menu</h2>
+                <div class="grid grid-3" id="productsGrid">
+                    <div class="empty-state">
+                        <i class="fas fa-spinner fa-spin"></i>
+                        <h3>Đang tải menu...</h3>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Stores List View (default) -->
+    <div id="storesListView">
+        <section class="section">
+            <div class="container">
+                <h1 class="section-title">Danh Sách Cửa Hàng</h1>
+                <div class="grid grid-3" id="storesGrid">
+                    <div class="empty-state">
+                        <i class="fas fa-spinner fa-spin"></i>
+                        <h3>Đang tải...</h3>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Product Detail Modal -->
+    <div class="modal" id="productModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title" id="productModalTitle"></h3>
+                <button class="modal-close" onclick="closeProductModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <img id="productModalImage" src="" alt="" style="width: 100%; border-radius: var(--border-radius); margin-bottom: 1rem;">
+                <p id="productModalDescription"></p>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin: 1.5rem 0;">
+                    <span class="product-price" id="productModalPrice"></span>
+                    <div class="quantity-control">
+                        <button onclick="decreaseQuantity()"><i class="fas fa-minus"></i></button>
+                        <span id="modalQuantity">1</span>
+                        <button onclick="increaseQuantity()"><i class="fas fa-plus"></i></button>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="closeProductModal()">Hủy</button>
+                <button class="btn btn-primary" onclick="addToCartFromModal()">
+                    <i class="fas fa-cart-plus"></i> Thêm vào giỏ
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/config.js"></script>
+    <script src="js/store.js"></script>
+</body>
+</html>
+
