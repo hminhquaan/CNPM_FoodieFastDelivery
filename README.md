@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Food Fast Delivery with Smart Drones (Backend)
 
 A 3-layer Node.js/TypeScript backend implementing:
@@ -144,3 +145,7 @@ Endpoint & bảo vệ:
 - Enums are strings in Prisma due to SQLite limitations.
 - Shipping cost is estimated before creation and persisted in `Order.shippingCents`.
 - Payment gateways are stubs for demo purposes.
+=======
+# CNPM_FoodieFastDelivery
+
+>>>>>>> 14ac9948f66e61ca0895cf95ff983e6c659289df
