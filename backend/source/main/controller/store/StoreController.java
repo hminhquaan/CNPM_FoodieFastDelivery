@@ -80,6 +80,18 @@ public class StoreController {
                 .build();
     }
 
+        /**
+         * Update store payment information
+         */
+        @PatchMapping("/{storeId}/payment")
+        public APIResponse<StoreResponse> updateStorePayment(@PathVariable("storeId") Long storeId,
+                                                                                                                 @RequestBody dto.request.store.StorePaymentRequest request) {
+                log.info("REST request to update store payment info: {}", storeId);
+                return APIResponse.<StoreResponse>builder()
+                                .result(storeService.updateStorePayment(storeId, request))
+                                .build();
+        }
+
     /**
      * Get stores by owner
      */

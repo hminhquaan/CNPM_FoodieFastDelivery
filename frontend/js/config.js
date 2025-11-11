@@ -1,9 +1,10 @@
 // API Configuration
 const API_CONFIG = {
-    BASE_URL: 'http://localhost:8080/home',
+    BASE_URL: 'http://localhost:8080',
     ENDPOINTS: {
         // Authentication
         LOGIN: '/auth/login',
+    VALIDATE: '/auth/validate',
     REGISTER: '/auth/signup',
     SIGNUP: '/auth/signup',
     LOGOUT: '/auth/logout',
@@ -35,11 +36,15 @@ const API_CONFIG = {
         ORDER_BY_CODE: (code) => `/api/v1/orders/code/${code}`,
         USER_ORDERS: (userId) => `/api/v1/orders/user/${userId}`,
 
+        // Users (admin)
+        USERS: '/users/getAllUser',
+
         // Payment
         PAYMENT_INIT: '/api/v1/payments/init',
 
         // Delivery
-        DELIVERY_BY_ORDER: (orderId) => `/api/v1/deliveries/order/${orderId}`,
+    DELIVERY_BY_ORDER: (orderId) => `/api/v1/deliveries/order/${orderId}`,
+    DELIVERY_DEMO_KICKOFF: (orderId) => `/api/v1/deliveries/demo/kickoff?orderId=${orderId}&autoAssign=true&autoProgress=true`,
 
         // Drones
         DRONES: '/drones',

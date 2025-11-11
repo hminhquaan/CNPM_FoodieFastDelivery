@@ -9,7 +9,7 @@
 
   <properties>
     <java.version>17</java.version>
-    <spring.boot.version>3.3.4</spring.boot.version>
+    <spring.boot.version>3.5.0</spring.boot.version>
     <mapstruct.version>1.5.5.Final</mapstruct.version>
   </properties>
 
@@ -26,6 +26,10 @@
   </dependencyManagement>
 
   <dependencies>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-web</artifactId>
@@ -106,13 +110,34 @@
       <groupId>org.flywaydb</groupId>
       <artifactId>flyway-mysql</artifactId>
     </dependency>
+
+    <!-- Testing -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+      <exclusions>
+        <exclusion>
+          <groupId>org.junit.vintage</groupId>
+          <artifactId>junit-vintage-engine</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
   </dependencies>
 
   <build>
+    <!-- Align with unconventional layout: treat backend/source/main as Java sources and backend/source/resources as resources -->
     <sourceDirectory>backend/source/main</sourceDirectory>
+    <testSourceDirectory>backend/source/test</testSourceDirectory>
     <resources>
       <resource>
         <directory>backend/source/resources</directory>
+        <includes>
+          <include>**/*.properties</include>
+          <include>**/*.yml</include>
+          <include>**/*.yaml</include>
+          <include>**/*.sql</include>
+        </includes>
       </resource>
     </resources>
     <plugins>
@@ -141,7 +166,24 @@
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>
         <version>${spring.boot.version}</version>
+        <configuration>
+          <!-- Ensure dev profile activates automatically when SPRING_PROFILES_ACTIVE not set -->
+          <profiles>
+            <profile>dev</profile>
+          </profiles>
+        </configuration>
       </plugin>
     </plugins>
   </build>
+
+  <profiles>
+    <profile>
+      <id>vscode-java</id>
+      <properties>
+        <!-- Hint for IDEs indexing: custom source path so language server can resolve Spring/Lombok -->
+        <maven.compiler.source>${java.version}</maven.compiler.source>
+        <maven.compiler.target>${java.version}</maven.compiler.target>
+      </properties>
+    </profile>
+  </profiles>
 </project>

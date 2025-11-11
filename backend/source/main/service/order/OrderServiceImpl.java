@@ -16,6 +16,7 @@ import repository.store.StoreRepository;
 import repository.cart.CartRepository;
 import repository.cart.CartItemRepository;
 import repository.user.UserRepository;
+import repository.user.UserAddressRepository;
 import service.payment.LedgerService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -40,6 +41,7 @@ public class OrderServiceImpl implements OrderService {
     private final CartItemRepository cartItemRepository;
     private final UserRepository userRepository;
     private final LedgerService ledgerService;
+    private final UserAddressRepository userAddressRepository;
 
     @Override
     @Transactional
@@ -89,7 +91,10 @@ public class OrderServiceImpl implements OrderService {
                 BigDecimal totalItemAmount = BigDecimal.ZERO;
 
                 // Tạo Order entity
-                Order order = Order.builder()
+        // Snapshot default user address (lat/lng) for delivery planning
+        String addressSnapshotJson = buildAddressSnapshot(userId);
+
+        Order order = Order.builder()
                         .userId(userId)
                         .storeId(storeId)
                         .orderCode(orderCode)
@@ -100,6 +105,7 @@ public class OrderServiceImpl implements OrderService {
                         .shippingFee(BigDecimal.ZERO)
                         .taxAmount(BigDecimal.ZERO)
                         .totalPayable(BigDecimal.ZERO)
+            .deliveryAddressSnapshot(addressSnapshotJson)
                         .createdAt(LocalDateTime.now())
                         .updatedAt(LocalDateTime.now())
                         .build();
@@ -132,8 +138,9 @@ public class OrderServiceImpl implements OrderService {
 
                     orderItemRepository.save(orderItem);
 
-                    // Cập nhật tồn kho
-                    product.setReservedQuantity(product.getReservedQuantity() + cartItem.getQuantity());
+                    // Cập nhật tồn kho (null-safe for reservedQuantity)
+                    int currentReserved = product.getReservedQuantity() == null ? 0 : product.getReservedQuantity();
+                    product.setReservedQuantity(currentReserved + cartItem.getQuantity());
                     product.setQuantityAvailable(product.getQuantityAvailable() - cartItem.getQuantity());
                     productRepository.save(product);
                 }
@@ -168,6 +175,32 @@ public class OrderServiceImpl implements OrderService {
         }
     }
 
+    private String buildAddressSnapshot(Long userId) {
+        try {
+            var def = userAddressRepository.findByUserIdAndIsDefaultTrue(userId);
+            if (def.isEmpty()) return null;
+            var addr = def.get();
+            // Build compact JSON manually to avoid extra dependencies
+            String full = safe(addr.getAddressLine()) + (addr.getWard()!=null? (", "+addr.getWard()):"")
+                    + (addr.getDistrict()!=null? (", "+addr.getDistrict()):"")
+                    + (addr.getCity()!=null? (", "+addr.getCity()):"");
+            String lat = addr.getLatitude() != null ? addr.getLatitude().toPlainString() : null;
+            String lng = addr.getLongitude() != null ? addr.getLongitude().toPlainString() : null;
+            StringBuilder sb = new StringBuilder("{");
+            sb.append("\"label\":\"").append(safe(addr.getLabel())).append("\",");
+            sb.append("\"fullAddress\":\"").append(full.replace("\"","\\\"")).append("\"");
+            if (lat != null && lng != null) {
+                sb.append(",\"lat\":").append(lat).append(",\"lng\":").append(lng);
+            }
+            sb.append("}");
+            return sb.toString();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private String safe(String s) { return s==null? "" : s.replace("\"","\\\""); }
+
     @Override
     public OrderResponse getOrderById(Long orderId) {
         Order order = orderRepository.findById(orderId)
@@ -193,6 +226,14 @@ public class OrderServiceImpl implements OrderService {
     @Override
     public List<OrderResponse> getOrdersByStoreId(Long storeId) {
         List<Order> orders = orderRepository.findByStoreId(storeId);
+        return orders.stream()
+                .map(this::buildOrderResponse)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<OrderResponse> getAllOrders() {
+        List<Order> orders = orderRepository.findAll();
         return orders.stream()
                 .map(this::buildOrderResponse)
                 .collect(Collectors.toList());
@@ -407,10 +448,43 @@ public class OrderServiceImpl implements OrderService {
                         .build())
                 .toList();
 
+        // Enrich store and user for display fields
+        String storeName = null;
+        Long storeId = order.getStoreId();
+        if (storeId != null) {
+            try {
+                Optional<Store> sOpt = storeRepository.findById(storeId);
+                if (sOpt.isPresent()) {
+                    storeName = sOpt.get().getName();
+                }
+            } catch (Exception e) {
+                log.debug("Unable to fetch store name for storeId={}", storeId);
+            }
+        }
+
+        String customerName = null;
+        String customerEmail = null;
+        Long userId = order.getUserId();
+        if (userId != null) {
+            try {
+                Optional<User> uOpt = userRepository.findById(userId);
+                if (uOpt.isPresent()) {
+                    User u = uOpt.get();
+                    customerName = (u.getFullName() != null && !u.getFullName().isBlank()) ? u.getFullName() : u.getUsername();
+                    customerEmail = u.getEmail();
+                }
+            } catch (Exception e) {
+                log.debug("Unable to fetch user info for userId={}", userId);
+            }
+        }
+
         return OrderResponse.builder()
                 .id(order.getId())
                 .userId(order.getUserId())
                 .storeId(order.getStoreId())
+                .storeName(storeName)
+                .customerName(customerName)
+                .customerEmail(customerEmail)
                 .orderCode(order.getOrderCode())
                 .status(order.getStatus())
                 .paymentStatus(order.getPaymentStatus())

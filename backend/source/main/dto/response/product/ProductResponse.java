@@ -21,6 +21,7 @@ public class ProductResponse {
     private BigDecimal basePrice;
     private String currency;
     private String mediaPrimaryUrl;
+    private Integer weightGram;
     private Integer quantityAvailable;
     private Integer reservedQuantity;
     private Integer safetyStock;

@@ -1,0 +1,25 @@
+@startuml
+' Sequence: Theo dõi giao hàng (User -> FE -> BE -> Drone -> DB)
+skinparam defaultFontName Arial
+actor "Người dùng" as U
+participant "Frontend (Web)" as FE
+participant "Backend (Spring Boot)" as BE
+participant "Thiết bị Drone/Phone" as DR
+database "CSDL MySQL" as DB
+
+U -> FE : Mở trang theo dõi đơn
+FE -> BE : GET /api/deliveries/by-order/{orderId}
+BE -> DB : Lấy Delivery, trạng thái, vị trí hiện tại
+BE --> FE : JSON (QUEUED/ASSIGNED/LAUNCHED/ARRIVING...)
+... vòng lặp poll ...
+DR -> BE : POST /drones/{code}/location {lat,lng,battery}
+BE -> DB : Lưu telemetries, cập nhật Drone
+FE -> BE : GET /api/deliveries/by-order/{orderId}
+BE -> DB : Tính khoảng cách còn lại, ETA
+BE --> FE : Cập nhật trạng thái + tọa độ hiển thị map
+opt Đến đích
+  FE -> BE : POST /api/deliveries/{id}/confirm
+  BE -> DB : Delivery=COMPLETED, Order=DELIVERED
+  BE --> FE : 200 OK
+end
+@enduml

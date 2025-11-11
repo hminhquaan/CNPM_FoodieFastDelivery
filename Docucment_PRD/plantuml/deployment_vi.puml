@@ -1,0 +1,37 @@
+@startuml
+skinparam shadowing false
+skinparam nodeBorderColor #999
+skinparam nodeBackgroundColor #f9f9f9
+
+node "Thiết bị Người dùng" {
+  artifact "Trình duyệt" as Browser
+}
+
+node "Internet" as Internet {
+}
+
+node "Hạ tầng Backend" {
+  node "Máy chủ ứng dụng" {
+    component "FoodFast Delivery (Spring Boot)" as App
+  }
+  node "Cơ sở dữ liệu" {
+    database "MySQL" as DB
+  }
+}
+
+node "Dịch vụ ngoài" {
+  node "Cổng thanh toán" {
+    component "VNPay Sandbox" as VNP
+  }
+  node "Thiết bị ngoại vi" {
+    component "Drone" as DRN
+  }
+}
+
+Browser --> App : HTTP(S) REST (/home/...)
+App --> DB : JDBC (JPA/Hibernate)
+App --> VNP : HTTP(S) tạo URL, nhận IPN
+App --> DRN : API cập nhật trạng thái/vị trí (nếu có)
+VNP --> App : Redirect return + IPN
+
+@enduml

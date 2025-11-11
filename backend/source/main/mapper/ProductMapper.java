@@ -5,10 +5,11 @@ import dto.response.product.ProductResponse;
 import entity.Product;
 import entity.Store;
 import org.mapstruct.*;
+import static org.mapstruct.ReportingPolicy.IGNORE;
 
 import java.util.List;
 
-@Mapper(componentModel = "spring")
+@Mapper(componentModel = "spring", unmappedTargetPolicy = IGNORE)
 public interface ProductMapper {
     @Mapping(source = "storeId", target = "store")
     @Mapping(source = "categoryId", target = "category.id")
@@ -16,6 +17,7 @@ public interface ProductMapper {
 
     @Mapping(source = "store.id", target = "storeId")
     @Mapping(source = "category.id", target = "categoryId")
+    @Mapping(source = "weightGram", target = "weightGram")
     ProductResponse toProductResponse(Product product);
 
     List<ProductResponse> toProductResponse(List<Product> products);

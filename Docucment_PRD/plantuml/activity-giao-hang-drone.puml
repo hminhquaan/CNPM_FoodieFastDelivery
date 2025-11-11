@@ -1,0 +1,28 @@
+@startuml
+' Activity: Vòng đời giao hàng bằng drone
+skinparam defaultFontName Arial
+start
+:Delivery ở trạng thái QUEUED;
+repeat
+  :Worker/Service thử tìm drone AVAILABLE đủ pin & tải;
+repeat while (Không tìm thấy?);
+:Assign drone -> trạng thái ASSIGNED;
+:Khởi tạo flight plan (danh sách điểm);
+:Đổi trạng thái LAUNCHED (cất cánh);
+:Drone cập nhật vị trí định kỳ -> API /drones/{code}/location;
+while (Chưa tới điểm giao?) is (Tiếp tục bay)
+  :Backend tính khoảng cách còn lại & dự đoán thời gian;
+  :Kiểm tra pin (monitor-battery);
+endwhile (Đã tới)
+:Đổi trạng thái ARRIVING;
+:Xác thực giao hàng (geofence/OTP/QR);
+if (Xác thực ok?) then (Đúng)
+  :Đổi trạng thái COMPLETED;
+  :Cập nhật Order=DELIVERED;
+else (Sai / timeout)
+  :Đổi sang FAILED hoặc RETURNED;
+  :Order vẫn PAID (không auto-cancel);
+endif
+:Trả drone về trạm -> CHARGING hoặc AVAILABLE;
+stop
+@enduml

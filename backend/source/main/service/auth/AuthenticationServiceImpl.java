@@ -37,8 +37,9 @@ public class AuthenticationServiceImpl implements AuthenticationService {
     @Override
     public AuthenticationResponse authenticate(LoginRequest request) {
         // Find user by username
-        User user = userRepository.findByUsername(request.getUsername())
-                .orElseThrow(() -> new RuntimeException("Invalid username or password"));
+    // Fetch user with roles eagerly to avoid potential empty role set in JWT
+    User user = userRepository.findByUsernameWithRoles(request.getUsername())
+        .orElseThrow(() -> new RuntimeException("Invalid username or password"));
 
         // Check if user is active
         if (user.getStatus() != UserStatus.ACTIVE) {
@@ -51,9 +52,10 @@ public class AuthenticationServiceImpl implements AuthenticationService {
         }
 
         // Extract roles
-        Set<String> roles = user.getRoles().stream()
-                .map(Roles::getName)
-                .collect(Collectors.toSet());
+    Set<String> roles = user.getRoles().stream()
+        .map(Roles::getName)
+        .collect(Collectors.toSet());
+    log.debug("Authenticating user {} with roles {}", user.getUsername(), roles);
 
         // Generate tokens
         String token = jwtService.generateToken(user.getUsername(), roles);
@@ -91,12 +93,13 @@ public class AuthenticationServiceImpl implements AuthenticationService {
         }
 
         String username = jwtService.extractUsername(refreshToken);
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+    User user = userRepository.findByUsernameWithRoles(username)
+        .orElseThrow(() -> new RuntimeException("User not found"));
 
-        Set<String> roles = user.getRoles().stream()
-                .map(Roles::getName)
-                .collect(Collectors.toSet());
+    Set<String> roles = user.getRoles().stream()
+        .map(Roles::getName)
+        .collect(Collectors.toSet());
+    log.debug("Refreshing token for user {} with roles {}", username, roles);
 
         return jwtService.generateToken(username, roles);
     }

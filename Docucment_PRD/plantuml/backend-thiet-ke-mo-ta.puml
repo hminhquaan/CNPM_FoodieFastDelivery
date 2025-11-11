@@ -1,0 +1,29 @@
+@startuml
+' Tổng quan thiết kế backend (mô tả bằng chú thích)
+skinparam defaultFontName Arial
+note as N1
+Mô tả:
+  Hệ thống FoodFastDelivery gồm các module:
+   - Authentication & JWT
+   - Quản lý sản phẩm, danh mục, cửa hàng
+   - Giỏ hàng & đơn hàng
+   - Thanh toán (VNPay style) với simulate dev
+   - Drone delivery: tự động gán drone, theo dõi vị trí
+   - Quản lý người dùng & địa chỉ
+
+Thiết kế chính:
+  - Layered architecture: Controller -> Service -> Repository -> Entity
+  - Dùng DTO request/response, MapStruct Mapper
+  - Exception tập trung với AppException & ErrorCode
+  - Payment flow: tạo transaction PENDING, xác thực callback, chuyển SUCCESS
+  - Delivery flow: có thread/logic auto progression trạng thái LAUNCHED -> ARRIVING -> COMPLETED
+  - Không auto cancel đơn PAID khi giao hàng FAILED
+
+Bảo mật:
+  - JWT Bearer trong header Authorization
+  - Role-based (USER, STORE_OWNER, ADMIN)
+
+ERD tham chiếu: erd-database.puml
+Triển khai: deployment.puml
+Component: component-backend.puml
+@enduml

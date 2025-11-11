@@ -33,8 +33,14 @@ public class StoreAddressImpl extends StoreAddress {
         return storeMapper.toStoreAddressResponse(storeAddress);
     }
 
-    public StoreAddressResponse updateAddress(Long addressId, StoreAddressRequest request){
-        StoreAddress storeAddress= storeAddressRepository.findById(addressId).orElseThrow(() ->  new AppException(ErrorCode.ADDREESS_NOT_EXISTED));
+    public StoreAddressResponse updateAddress(Long storeId, Long addressId, StoreAddressRequest request){
+        StoreAddress storeAddress= storeAddressRepository.findById(addressId)
+                .orElseThrow(() ->  new AppException(ErrorCode.ADDREESS_NOT_EXISTED));
+        // Verify ownership
+        if (storeAddress.getStore() == null || storeAddress.getStore().getId() == null ||
+                !storeAddress.getStore().getId().equals(storeId)) {
+            throw new AppException(ErrorCode.UNAUTHORIZED);
+        }
         storeMapper.updateStoreAddress(storeAddress,request);
         storeAddressRepository.save(storeAddress);
         return storeMapper.toStoreAddressResponse(storeAddress);
@@ -47,8 +53,13 @@ public class StoreAddressImpl extends StoreAddress {
                 .toList();
     }
 
-    public void deleteAddress(Long addressId){
-        StoreAddress storeAddress= storeAddressRepository.findById(addressId).orElseThrow(() -> new AppException(ErrorCode.ADDREESS_NOT_EXISTED));
+    public void deleteAddress(Long storeId, Long addressId){
+        StoreAddress storeAddress= storeAddressRepository.findById(addressId)
+                .orElseThrow(() -> new AppException(ErrorCode.ADDREESS_NOT_EXISTED));
+        if (storeAddress.getStore() == null || storeAddress.getStore().getId() == null ||
+                !storeAddress.getStore().getId().equals(storeId)) {
+            throw new AppException(ErrorCode.UNAUTHORIZED);
+        }
         storeAddressRepository.delete(storeAddress);
     }
 

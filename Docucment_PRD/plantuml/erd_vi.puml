@@ -1,0 +1,165 @@
+@startuml
+hide methods
+hide stereotypes
+skinparam linetype ortho
+skinparam classBackgroundColor #f9f9f9
+skinparam classBorderColor #999
+
+entity User {
+  + id: Long
+  + username
+  + email
+  + passwordHash
+  + fullName
+  + phone
+}
+entity Roles {
+  + id: Long
+  + name
+}
+entity UserAddress {
+  + id: Long
+  + userId
+  + label
+  + fullAddress
+  + latitude
+  + longitude
+  + isDefault
+}
+entity Store {
+  + id: Long
+  + ownerUserId
+  + name
+  + description
+  + storeStatus
+}
+entity StoreAddress {
+  + id: Long
+  + storeId
+  + addressLine
+  + ward
+  + district
+  + city
+  + country
+  + latitude
+  + longitude
+  + flightCorridorRadius
+}
+entity ProductCategory {
+  + id: Long
+  + name
+  + slug
+}
+entity Product {
+  + id: Long
+  + storeId
+  + categoryId
+  + sku
+  + name
+  + basePrice
+  + weightGram
+}
+entity Cart {
+  + id: Long
+  + userId
+  + status
+}
+entity CartItem {
+  + id: Long
+  + cartId
+  + productId
+  + storeId
+  + quantity
+  + unitPrice
+}
+entity Order {
+  + id: Long
+  + userId
+  + storeId
+  + totalAmount
+  + status
+  + deliveryAddressSnapshot (JSON)
+}
+entity OrderItem {
+  + id: Long
+  + orderId
+  + productId
+  + quantity
+  + unitPrice
+  + weightGram
+}
+entity PaymentTransaction {
+  + id: Long
+  + orderId
+  + provider
+  + txnRef
+  + amount
+  + status
+}
+entity Delivery {
+  + id: Long
+  + orderId
+  + droneId
+  + currentStatus
+  + plannedDepartureTime
+  + actualDepartureTime
+  + completedTime
+}
+entity Drone {
+  + id: Long
+  + code
+  + model
+  + maxPayloadGram
+  + currentBatteryPercent
+  + lastLatitude
+  + lastLongitude
+  + status
+}
+entity FlightPlan {
+  + id: Long
+  + deliveryId
+  + droneId
+}
+entity FlightPlanPoint {
+  + id: Long
+  + flightPlanId
+  + seqIndex
+  + latitude
+  + longitude
+}
+entity StoreLedger {
+  + id: Long
+  + storeId
+  + balance
+}
+entity PayoutBatch {
+  + id: Long
+  + storeId
+  + totalAmount
+  + status
+}
+
+User ||--o{ UserAddress : "có"
+User ||--o{ Store : "sở hữu (ownerUserId)"
+User ||--o{ Cart : "có"
+User ||--o{ Order : "đặt"
+
+Roles }o--o{ User : "gán vai trò"
+
+Store ||--o{ StoreAddress : "có"
+Store ||--o{ Product : "bán"
+Store ||--o{ Order : "nhận đơn"
+Store ||--o{ StoreLedger : "sổ cái"
+Store ||--o{ PayoutBatch : "chi trả"
+
+ProductCategory ||--o{ Product : "phân loại"
+
+Cart ||--o{ CartItem
+Order ||--o{ OrderItem
+Order ||--o{ PaymentTransaction : "thanh toán"
+Order ||--o{ Delivery : "giao vận"
+
+Drone ||--o{ Delivery : "thực hiện"
+Delivery ||--o{ FlightPlan : "kế hoạch bay"
+FlightPlan ||--o{ FlightPlanPoint : "điểm bay"
+@enduml

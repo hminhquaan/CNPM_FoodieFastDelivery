@@ -7,6 +7,7 @@ import lombok.experimental.FieldDefaults;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 @Builder
@@ -26,4 +27,7 @@ public class UserResponse {
     LocalDateTime updatedAt;
     LocalDate dateOfBirth;
     Gender gender;
+
+    // Role names for display in admin UI
+    List<String> roles;
 }

@@ -1,6 +1,7 @@
 package service.store;
 
 import dto.request.store.StoreRequest;
+import dto.request.store.StorePaymentRequest;
 import dto.response.product.ProductResponse;
 import dto.response.store.StoreResponse;
 import dto.response.store.StoreWithProductsResponse;
@@ -213,6 +214,7 @@ public class StoreServiceImpl implements StoreService {
                 .basePrice(product.getBasePrice())
                 .currency(product.getCurrency())
                 .mediaPrimaryUrl(product.getMediaPrimaryUrl())
+                .weightGram(product.getWeightGram())
                 .quantityAvailable(product.getQuantityAvailable())
                 .reservedQuantity(product.getReservedQuantity())
                 .safetyStock(product.getSafetyStock())
@@ -287,4 +289,33 @@ public class StoreServiceImpl implements StoreService {
         // Delegate to ProductService for actual deletion
         productService.delete(productId);
     }
+
+        @Override
+        @Transactional
+        public StoreResponse updateStorePayment(Long storeId, StorePaymentRequest request) {
+                log.info("Updating payment info for store: {}", storeId);
+
+                Store store = storeRepository.findById(storeId)
+                                .orElseThrow(() -> new AppException(ErrorCode.STORE_NOT_EXISTED));
+
+                // Apply only non-null (and non-blank for Strings) fields
+                if (request.getBankAccountName() != null && !request.getBankAccountName().isBlank()) {
+                        store.setBankAccountName(request.getBankAccountName());
+                }
+                if (request.getBankAccountNumber() != null && !request.getBankAccountNumber().isBlank()) {
+                        store.setBankAccountNumber(request.getBankAccountNumber());
+                }
+                if (request.getBankName() != null && !request.getBankName().isBlank()) {
+                        store.setBankName(request.getBankName());
+                }
+                if (request.getBankBranch() != null && !request.getBankBranch().isBlank()) {
+                        store.setBankBranch(request.getBankBranch());
+                }
+                if (request.getPayoutEmail() != null && !request.getPayoutEmail().isBlank()) {
+                        store.setPayoutEmail(request.getPayoutEmail());
+                }
+
+                store = storeRepository.save(store);
+                return storeMapper.toStoreResponse(store);
+        }
 }

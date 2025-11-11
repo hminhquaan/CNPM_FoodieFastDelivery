@@ -11,8 +11,10 @@ import org.mapstruct.*;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDate;
+import java.util.Collections;
+import java.util.stream.Collectors;
 
-@Mapper(componentModel = "spring", imports = {LocalDate.class, Gender.class})
+@Mapper(componentModel = "spring", imports = {LocalDate.class, Gender.class, Collectors.class, Collections.class})
 public interface UserMapper {
 
     // Request -> Entity
@@ -28,7 +30,9 @@ public interface UserMapper {
             expression = "java(request.getGender() != null ? Gender.valueOf(request.getGender()) : null)")
     User toUser(UserCreationRequest request);
 
-    // Entity -> Response
+    // Entity -> Response, map roles to role names
+    @Mapping(target = "roles",
+            expression = "java(user.getRoles() != null ? user.getRoles().stream().map(r -> r.getName()).collect(Collectors.toList()) : Collections.emptyList())")
     UserResponse toResponse(User user);
 
     // Update entity từ request (patch)

@@ -2,6 +2,8 @@ package service.payment;
 
 import config.payment.VnPayConfig;
 import repository.payment.PaymentTransactionRepository;
+import service.delivery.DeliveryService;
+import dto.request.delivery.CreateDeliveryRequest;
 import dto.request.payment.PaymentInitRequest;
 import dto.request.payment.VnPayWebhookPayload;
 import dto.response.payment.PaymentResponse;
@@ -39,6 +41,7 @@ public class PaymentServiceImpl implements PaymentService {
     private final VnPayConfig vnPayConfig;
     private final ObjectMapper objectMapper;
     private final NgrokUrlService ngrokUrlService;
+    private final DeliveryService deliveryService;
 
     @Override
     @Transactional
@@ -109,7 +112,12 @@ public class PaymentServiceImpl implements PaymentService {
                          order.getId(), vnpTxnRef);
             }
 
-            String paymentUrl = generateVnPayUrl(order, transaction);
+            // BankCode handling: only include vnp_BankCode when client explicitly specifies one.
+            // Some sandbox merchant profiles do not support hard-forced channels like VNPAYQR, which causes code=76.
+            // Leaving bankCode empty lets VNPay show all supported methods on the payment page.
+            String bankCode = request.getBankCode();
+
+            String paymentUrl = generateVnPayUrl(order, transaction, bankCode);
 
             transaction.setRequestPayload(objectMapper.writeValueAsString(request));
             transaction = paymentTransactionRepository.save(transaction);
@@ -186,15 +194,30 @@ public class PaymentServiceImpl implements PaymentService {
 
                 log.info("Payment successful for order: {}", order.getOrderCode());
 
+                // Auto-create delivery record if not exists
+                try {
+                    CreateDeliveryRequest dreq = CreateDeliveryRequest.builder()
+                            .orderId(order.getId())
+                            .pickupStoreId(order.getStoreId())
+                            .dropoffAddressSnapshot(order.getDeliveryAddressSnapshot())
+                            .build();
+                    deliveryService.createDelivery(dreq);
+                } catch (Exception ex) {
+                    log.warn("Auto-create delivery skipped: {}", ex.getMessage());
+                }
+
             } else {
-                transaction.setStatus(PaymentTransactionStatus.FAILED);
-                transaction.setCompletedAt(LocalDateTime.now());
 
-                order.setStatus(OrderStatus.CREATED);
-                order.setPaymentStatus(PaymentStatus.FAILED);
-                order.setUpdatedAt(LocalDateTime.now());
-
-                log.warn("Payment failed for order: {} with code: {}", order.getOrderCode(), responseCode);
+                    transaction.setStatus("24".equals(responseCode) ? PaymentTransactionStatus.CANCELLED : PaymentTransactionStatus.FAILED);
+                    transaction.setCompletedAt(LocalDateTime.now());
+                    if ("24".equals(responseCode)) {
+                        order.setStatus(OrderStatus.CANCELLED); // user actively cancelled
+                    } else {
+                        order.setStatus(OrderStatus.CREATED);   // allow retry for other failures/timeouts
+                    }
+                    order.setPaymentStatus(PaymentStatus.FAILED);
+                    order.setUpdatedAt(LocalDateTime.now());
+                    log.warn("Payment failed for order: {} with code: {} (mapped status: {})", order.getOrderCode(), responseCode, order.getStatus());
             }
 
             paymentTransactionRepository.save(transaction);
@@ -274,16 +297,30 @@ public class PaymentServiceImpl implements PaymentService {
 
                 log.info("✓ Payment successful for order: {}", order.getOrderCode());
 
-            } else {
-                // Payment failed
-                transaction.setStatus(PaymentTransactionStatus.FAILED);
-                transaction.setCompletedAt(LocalDateTime.now());
+                // Auto-create delivery record if not exists
+                try {
+                    CreateDeliveryRequest dreq = CreateDeliveryRequest.builder()
+                            .orderId(order.getId())
+                            .pickupStoreId(order.getStoreId())
+                            .dropoffAddressSnapshot(order.getDeliveryAddressSnapshot())
+                            .build();
+                    deliveryService.createDelivery(dreq);
+                } catch (Exception ex) {
+                    log.warn("Auto-create delivery skipped: {}", ex.getMessage());
+                }
 
-                order.setStatus(OrderStatus.CREATED);
+            } else {
+                // Payment failed / cancelled
+                transaction.setStatus("24".equals(responseCode) ? PaymentTransactionStatus.CANCELLED : PaymentTransactionStatus.FAILED);
+                transaction.setCompletedAt(LocalDateTime.now());
+                if ("24".equals(responseCode)) {
+                    order.setStatus(OrderStatus.CANCELLED); // user cancelled
+                } else {
+                    order.setStatus(OrderStatus.CREATED);   // keep created for retry (timeout, other errors)
+                }
                 order.setPaymentStatus(PaymentStatus.FAILED);
                 order.setUpdatedAt(LocalDateTime.now());
-
-                log.warn("✗ Payment failed for order: {} with code: {}", order.getOrderCode(), responseCode);
+                log.warn("✗ Payment failed for order: {} with code: {} (mapped status: {})", order.getOrderCode(), responseCode, order.getStatus());
             }
 
             paymentTransactionRepository.save(transaction);
@@ -387,7 +424,7 @@ public class PaymentServiceImpl implements PaymentService {
     }
 
 
-    private String generateVnPayUrl(Order order, PaymentTransaction transaction) throws UnsupportedEncodingException {
+    private String generateVnPayUrl(Order order, PaymentTransaction transaction, String bankCode) throws UnsupportedEncodingException {
         Map<String, String> vnpParams = new TreeMap<>();
 
         String returnUrl = vnPayConfig.getReturnUrl();
@@ -401,11 +438,19 @@ public class PaymentServiceImpl implements PaymentService {
         vnpParams.put("vnp_OrderType", vnPayConfig.getOrderType());
         vnpParams.put("vnp_Locale", "vn");
         vnpParams.put("vnp_ReturnUrl", returnUrl);
-        vnpParams.put("vnp_IpAddr", "127.0.0.1");
+        // Prefer VNPay QR channel when requested
+        if (bankCode != null && !bankCode.isBlank()) {
+            vnpParams.put("vnp_BankCode", bankCode);
+        }
+    vnpParams.put("vnp_IpAddr", resolveClientIp());
 
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
-        String createDate = LocalDateTime.now().format(formatter);
-        vnpParams.put("vnp_CreateDate", createDate);
+    DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
+    java.time.ZonedDateTime now = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh"));
+    String createDate = now.format(formatter);
+    vnpParams.put("vnp_CreateDate", createDate);
+    // Provide an expire date to avoid VNPay page timer JS errors and enforce timeout (e.g., +15 minutes)
+    String expireDate = now.plusMinutes(15).format(formatter);
+    vnpParams.put("vnp_ExpireDate", expireDate);
 
         // === Build hashData (encode từng value) ===
         StringBuilder hashData = new StringBuilder();
@@ -428,7 +473,9 @@ public class PaymentServiceImpl implements PaymentService {
 
         String vnpSecureHash = hmacSHA512(vnPayConfig.getHashSecret(), hashData.toString());
 
-        return vnPayConfig.getVnpUrl() + "?" + query + "&vnp_SecureHash=" + vnpSecureHash;
+        String finalUrl = vnPayConfig.getVnpUrl() + "?" + query + "&vnp_SecureHash=" + vnpSecureHash;
+        log.info("VNPay URL => {}", finalUrl);
+        return finalUrl;
     }
 
 
@@ -447,6 +494,24 @@ public class PaymentServiceImpl implements PaymentService {
         } catch (Exception e) {
             throw new RuntimeException("Error generating HMAC SHA512", e);
         }
+    }
+
+    private String resolveClientIp() {
+        try {
+            org.springframework.web.context.request.RequestAttributes attrs = org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+            if (attrs instanceof org.springframework.web.context.request.ServletRequestAttributes servletAttrs) {
+                jakarta.servlet.http.HttpServletRequest request = servletAttrs.getRequest();
+                String xff = request.getHeader("X-Forwarded-For");
+                if (xff != null && !xff.isBlank()) {
+                    return xff.split(",")[0].trim();
+                }
+                String realIp = request.getHeader("X-Real-IP");
+                if (realIp != null && !realIp.isBlank()) return realIp;
+                return request.getRemoteAddr();
+            }
+        } catch (Exception ignored) {
+        }
+        return "127.0.0.1";
     }
 
     /**

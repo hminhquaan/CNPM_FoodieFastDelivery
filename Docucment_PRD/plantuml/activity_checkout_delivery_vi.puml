@@ -1,0 +1,53 @@
+@startuml
+skinparam shadowing false
+skinparam activity {
+  BackgroundColor #f9f9f9
+  BorderColor #999
+}
+|Người dùng|
+start
+:Chọn sản phẩm và thêm vào giỏ;
+:Xem giỏ hàng;
+|Frontend|
+if (Giỏ hàng hợp lệ?) then (Có)
+  :Gửi yêu cầu tạo đơn hàng;
+  |Backend|
+  :Tách giỏ theo cửa hàng, tạo các Đơn hàng PENDING;
+  :Chụp địa chỉ nhận hàng (label, lat, lng);
+  :Tính tổng tiền, tổng khối lượng;
+  :Sinh URL thanh toán VNPay và trả về;
+  |Frontend|
+  :Chuyển hướng trình duyệt tới VNPay;
+  |VNPay|
+  if (Khách thanh toán thành công?) then (Có)
+    :Chuyển hướng về backend (vnpay-return);
+    |Backend|
+    :Xác thực chữ ký, hiển thị kết quả (không quyết định trạng thái);
+    |VNPay|
+    :Gọi IPN tới backend vnpay-ipn;
+    |Backend|
+    :Xác thực IPN, đánh dấu đơn đã thanh toán;
+    :Tự động tạo Delivery cho từng đơn đã thanh toán;
+    :Tính khối lượng, chọn Drone sẵn sàng (đủ tải, đủ pin, gần nhất);
+    if (Có drone phù hợp?) then (Có)
+      :Gán drone, đặt trạng thái ASSIGNED;
+      :Lên lịch chuyển trạng thái LAUNCHED -> ARRIVING -> COMPLETED;
+    else (Không)
+      :Đánh dấu giao vận thất bại (không có drone);
+    endif
+    |Frontend|
+    :Mở trang theo dõi đơn hàng;
+    repeat
+      :Gọi API lấy trạng thái Delivery (1.5s/lần);
+    repeat while (Chưa COMPLETED) is (Có)
+    |Backend|
+    :Khi COMPLETED, giải phóng drone (AVAILABLE);
+  else (Không)
+    |Backend|
+    :Đơn giữ trạng thái UNPAID/FAILED;
+  endif
+else (Không)
+  :Hiển thị lỗi/thiếu thông tin;
+endif
+stop
+@enduml

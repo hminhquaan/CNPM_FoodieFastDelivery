@@ -10,5 +10,6 @@ public interface ProductCategoryService {
     ProductCategoryResponse updateCategory(Long id, ProductCategoryRequest category);
     void deleteCategory(Long id);
     List<ProductCategoryResponse> getAllCategories();
+    ProductCategoryResponse getCategoryById(Long id);
 //    List<ProductCategory> getRootCategories();
 }

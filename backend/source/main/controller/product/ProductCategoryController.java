@@ -38,4 +38,19 @@ public class ProductCategoryController {
                 .result(productCategoryService.getAllCategories())
                 .build();
     }
+
+    @GetMapping("/{id}")
+    public APIResponse<ProductCategoryResponse> getCategory(@PathVariable Long id) {
+        return APIResponse.<ProductCategoryResponse>builder()
+                .result(productCategoryService.getCategoryById(id))
+                .build();
+    }
+
+    @DeleteMapping("/{id}")
+    public APIResponse<Void> deleteCategory(@PathVariable Long id) {
+        productCategoryService.deleteCategory(id);
+        return APIResponse.<Void>builder()
+                .message("Category deleted successfully")
+                .build();
+    }
 }

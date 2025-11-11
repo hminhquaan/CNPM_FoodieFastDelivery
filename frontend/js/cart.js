@@ -43,10 +43,12 @@ async function loadCart() {
         const response = await APIHelper.get(API_CONFIG.ENDPOINTS.CART);
         cartData = response;
 
-        if (!cartData || !cartData.items || cartData.items.length === 0) {
+        // Backend returns `cartItems` (not `items`)
+        const items = (cartData && cartData.cartItems) || [];
+        if (!cartData || items.length === 0) {
             showEmptyCart();
         } else {
-            displayCartItems(cartData.items);
+            displayCartItems(items);
             updateSummary(cartData);
         }
 
@@ -70,14 +72,14 @@ function displayCartItems(items) {
 
     container.innerHTML = items.map((item, index) => `
         <div class="cart-item" id="cartItem${item.productId}">
-            <img src="${item.imageUrl || '../img/placeholder-food.svg'}" 
+            <img src="${item.productImageUrl || '../img/placeholder-food.svg'}" 
                  alt="${item.productName}" 
                  class="cart-item-img"
                  onerror="this.onerror=null; this.src='../img/placeholder-food.svg'">
             <div class="cart-item-info">
                 <h4 class="cart-item-title">${item.productName}</h4>
                 <p class="text-gray">${item.storeName || 'Cửa hàng'}</p>
-                <div class="cart-item-price">${FormatHelper.currency(item.price)}</div>
+                <div class="cart-item-price">${FormatHelper.currency(item.unitPrice || 0)}</div>
                 <div class="quantity-control">
                     <button onclick="updateQuantity(${item.productId}, ${item.quantity - 1})">
                         <i class="fas fa-minus"></i>
@@ -94,7 +96,7 @@ function displayCartItems(items) {
                     <i class="fas fa-trash"></i>
                 </button>
                 <div style="font-size: 1.2rem; font-weight: bold; color: var(--primary-color);">
-                    ${FormatHelper.currency(item.subtotal)}
+                    ${FormatHelper.currency(item.totalPrice || 0)}
                 </div>
             </div>
         </div>

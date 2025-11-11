@@ -9,96 +9,138 @@ import service.user.UserService;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/users")
+@RequestMapping({"/api/v1/users", "/users"})
+@Validated
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 public class UserController {
     UserService userService;
 
-    @PostMapping({"/userCreated"})
-    public APIResponse<UserResponse> createUser(@RequestBody UserCreationRequest request) {
-        APIResponse<UserResponse> response = new APIResponse<>();
-        response.setResult(userService.createUser(request));
-        return response;
+    // Create user (admin or self-signup depending on security rules)
+        @PostMapping({"", "/userCreated"})
+    public ResponseEntity<APIResponse<UserResponse>> createUser(@RequestBody UserCreationRequest request) {
+        UserResponse created = userService.createUser(request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(APIResponse.<UserResponse>builder()
+                .code(201)
+                .message("User created")
+                .result(created)
+                .build());
     }
 
-    @PutMapping({"/UpdateUser/{userId}"})
-    public APIResponse<UserResponse> updateUser(@RequestBody UserCreationRequest request, @PathVariable String userId) {
-        APIResponse<UserResponse> response = new APIResponse<>();
-        response.setResult(userService.updateUser(request, userId));
-        return response;
+    // Update user
+        @PutMapping({"/{userId}", "/UpdateUser/{userId}"})
+    public ResponseEntity<APIResponse<UserResponse>> updateUser(@RequestBody UserCreationRequest request, @PathVariable String userId) {
+        UserResponse updated = userService.updateUser(request, userId);
+        return ResponseEntity.ok(APIResponse.<UserResponse>builder()
+                .code(200)
+                .message("User updated")
+                .result(updated)
+                .build());
     }
 
-    @GetMapping({"/GetUserById/{userId}"})
-    public APIResponse<UserResponse> getUserById(@PathVariable String userId) {
-        APIResponse<UserResponse> response = new APIResponse<>();
-        response.setResult(userService.getUserById(userId));
-        return response;
+    // Get user by id
+        @GetMapping({"/{userId}", "/GetUserById/{userId}"})
+    public ResponseEntity<APIResponse<UserResponse>> getUserById(@PathVariable String userId) {
+        UserResponse user = userService.getUserById(userId);
+        return ResponseEntity.ok(APIResponse.<UserResponse>builder()
+                .code(200)
+                .message("User retrieved")
+                .result(user)
+                .build());
     }
 
-    @DeleteMapping({"/deleteUser/{userId}"})
-    public APIResponse<String> deleteUser(@PathVariable String userId) {
-        APIResponse<String> response = new APIResponse<>();
-        response.setResult(userService.deleteUser(userId));
-        return response;
+    // Delete user
+        @DeleteMapping({"/{userId}", "/deleteUser/{userId}"})
+    public ResponseEntity<APIResponse<String>> deleteUser(@PathVariable String userId) {
+        String result = userService.deleteUser(userId);
+        return ResponseEntity.ok(APIResponse.<String>builder()
+                .code(200)
+                .message("User deleted")
+                .result(result)
+                .build());
     }
-    @GetMapping({"/getAllUser"})
-    public APIResponse getAllUser() {
-        APIResponse response = new APIResponse<>();
-        response.setResult(userService.getAllUsers());
-        return response;
+
+    // List users (simple pagination could be added later)
+        @GetMapping({"", "/getAllUser"})
+    public ResponseEntity<APIResponse<List<UserResponse>>> getAllUsers() {
+        List<UserResponse> users = userService.getAllUsers();
+        return ResponseEntity.ok(APIResponse.<List<UserResponse>>builder()
+                .code(200)
+                .message("Users retrieved")
+                .result(users)
+                .build());
     }
 
     // User Address endpoints
     @PostMapping("/{userId}/addresses")
-    public APIResponse<UserAddressResponse> addAddress(@PathVariable Long userId,
+    public ResponseEntity<APIResponse<UserAddressResponse>> addAddress(@PathVariable Long userId,
                                                        @RequestBody UserAddressCreationRequest request) {
-        APIResponse<UserAddressResponse> response = new APIResponse<>();
-        response.setResult(userService.addAddress(userId, request));
-        return response;
+        UserAddressResponse addr = userService.addAddress(userId, request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(APIResponse.<UserAddressResponse>builder()
+                .code(201)
+                .message("Address created")
+                .result(addr)
+                .build());
     }
 
     @GetMapping("/{userId}/addresses")
-    public APIResponse<List<UserAddressResponse>> getUserAddresses(@PathVariable Long userId) {
-        APIResponse<List<UserAddressResponse>> response = new APIResponse<>();
-        response.setResult(userService.getUserAddresses(userId));
-        return response;
+    public ResponseEntity<APIResponse<List<UserAddressResponse>>> getUserAddresses(@PathVariable Long userId) {
+        List<UserAddressResponse> list = userService.getUserAddresses(userId);
+        return ResponseEntity.ok(APIResponse.<List<UserAddressResponse>>builder()
+                .code(200)
+                .message("Addresses retrieved")
+                .result(list)
+                .build());
     }
 
     @PutMapping("/{userId}/addresses/{addressId}")
-    public APIResponse<UserAddressResponse> updateAddress(@PathVariable Long userId,
+    public ResponseEntity<APIResponse<UserAddressResponse>> updateAddress(@PathVariable Long userId,
                                                           @PathVariable Long addressId,
                                                           @RequestBody UserAddressCreationRequest request) {
-        APIResponse<UserAddressResponse> response = new APIResponse<>();
-        response.setResult(userService.updateAddress(userId, addressId, request));
-        return response;
+        UserAddressResponse addr = userService.updateAddress(userId, addressId, request);
+        return ResponseEntity.ok(APIResponse.<UserAddressResponse>builder()
+                .code(200)
+                .message("Address updated")
+                .result(addr)
+                .build());
     }
 
     @DeleteMapping("/{userId}/addresses/{addressId}")
-    public APIResponse<String> deleteAddress(@PathVariable Long userId, @PathVariable Long addressId) {
-        APIResponse<String> response = new APIResponse<>();
+    public ResponseEntity<APIResponse<String>> deleteAddress(@PathVariable Long userId, @PathVariable Long addressId) {
         userService.deleteAddress(userId, addressId);
-        response.setResult("Address deleted successfully");
-        return response;
+        return ResponseEntity.ok(APIResponse.<String>builder()
+                .code(200)
+                .message("Address deleted")
+                .result("Address deleted successfully")
+                .build());
     }
 
     @PutMapping("/{userId}/addresses/{addressId}/set-default")
-    public APIResponse<UserAddressResponse> setDefaultAddress(@PathVariable Long userId,
+    public ResponseEntity<APIResponse<UserAddressResponse>> setDefaultAddress(@PathVariable Long userId,
                                                              @PathVariable Long addressId) {
-        APIResponse<UserAddressResponse> response = new APIResponse<>();
-        response.setResult(userService.setDefaultAddress(userId, addressId));
-        return response;
+        UserAddressResponse def = userService.setDefaultAddress(userId, addressId);
+        return ResponseEntity.ok(APIResponse.<UserAddressResponse>builder()
+                .code(200)
+                .message("Default address set")
+                .result(def)
+                .build());
     }
 
     @GetMapping("/{userId}/addresses/default")
-    public APIResponse<UserAddressResponse> getDefaultAddress(@PathVariable Long userId) {
-        APIResponse<UserAddressResponse> response = new APIResponse<>();
-        response.setResult(userService.getDefaultAddress(userId));
-        return response;
+    public ResponseEntity<APIResponse<UserAddressResponse>> getDefaultAddress(@PathVariable Long userId) {
+        UserAddressResponse def = userService.getDefaultAddress(userId);
+        return ResponseEntity.ok(APIResponse.<UserAddressResponse>builder()
+                .code(200)
+                .message("Default address retrieved")
+                .result(def)
+                .build());
     }
 }

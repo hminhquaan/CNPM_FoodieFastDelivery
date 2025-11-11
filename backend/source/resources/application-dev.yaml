@@ -1,26 +1,61 @@
 server:
   port: 8080
   servlet:
-    context-path: /home
+    context-path: /
 
 spring:
   datasource:
-    url: jdbc:h2:mem:foodfast;DB_CLOSE_DELAY=-1;MODE=MySQL
-    driver-class-name: org.h2.Driver
-    username: sa
-    password:
+    url: jdbc:mysql://localhost:3306/fast_food_delivery?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC&useLegacyDatetimeCode=false&allowPublicKeyRetrieval=true
+    username: root
+    password: quan0931848972
+    driver-class-name: com.mysql.cj.jdbc.Driver
   jpa:
     hibernate:
       ddl-auto: update
     show-sql: true
+    defer-datasource-initialization: true
     properties:
       hibernate:
         format_sql: true
-  h2:
-    console:
-      enabled: true
-      path: /h2-console
+  sql:
+    init:
+      # Turn OFF automatic execution of data.sql so DB changes persist across restarts.
+      # Switch back to 'always' temporarily if you need to re-run the seed script once.
+      mode: never
+#  Removed data-locations to prevent seeding on each startup. If you want controlled migrations,
+#  introduce Flyway or Liquibase instead of data.sql.
+  # NOTE: If you need initial demo data once, run with SPRING_SQL_INIT_MODE=always for one start, then revert.
 
-# Reuse same JWT key from default profile if not overridden
-# jwt:
-#   signerKey: <inherit from application.yaml>
+  flyway:
+    enabled: false
+
+# Reuse same JWT key and management settings from application.yaml unless overridden
+jwt:
+  signerKey: "KrNmhbHWRyKlsC8INjwDulyy+A1XoYm2N6KXJ/knkLQiEnE9QS9s7k02m31arvcPfXqTsENoArNgJbrgdQsPyw=="
+  valid-duration: 3600 # Ví dụ: thời gian hết hạn (giây), tùy code của bạn có dùng không
+  refreshable-duration: 7200 # Ví dụ
+
+vnpay:
+  tmn-code: "HCVE5UQF"
+  hash-secret: "QQ8FJPL59KYNDMMPJNJOGFJ7FCVNL41J"
+  url: "https://sandbox.vnpayment.vn/paymentv2/vpcpay.html"
+  return-url: "http://localhost:8080/api/v1/payments/vnpay-return"
+
+# Frontend base URL for building links in payment return pages
+frontend:
+  base-url: "http://localhost:3000"
+  api-url: "https://sandbox.vnpayment.vn/merchant_webapi/api/transaction"
+  version: "2.1.0"
+  command: "pay"
+  order-type: "other"
+
+app:
+  seed:
+    ensure-categories: false    # keep false; set true only when you want categories auto-created
+    populate-demo: false        # keep false so CommandLineRunner won't create demo stores/products
+  admin:
+    normalize-on-start: false   # keep off; use admin endpoint to normalize to avoid startup issues
+  payments:
+    allow-simulate: true        # enable /api/v1/payments/simulate-success for local drone testing
+  demo:
+    enable: false               # demo kickoff disabled; real assignment flow now in place

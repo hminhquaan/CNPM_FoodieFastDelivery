@@ -1,0 +1,70 @@
+@startuml
+' Use Case Diagram: Người dùng & Admin
+left to right direction
+skinparam packageStyle rectangle
+skinparam shadowing false
+skinparam actorStyle awesome
+skinparam defaultFontName Arial
+skinparam wrapWidth 200
+skinparam usecase {
+  BackgroundColor #f8f9fa
+  BorderColor #333
+  ArrowColor #333
+}
+actor NguoiDung as User
+actor Admin as Admin
+actor HeThongDrone as Drone
+actor CongThanhToan as Payment
+
+package "Quản lý Đơn hàng" {
+  usecase "Đặt hàng\n(chọn sản phẩm, địa chỉ)" as UC_Order
+  usecase "Thanh toán trực tuyến" as UC_Pay
+  usecase "Theo dõi trạng thái giao" as UC_Track
+  usecase "Hủy đơn (trước khi giao)" as UC_Cancel
+}
+
+package "Quản lý Drone" {
+  usecase "Đăng ký drone mới" as UC_RegDrone
+  usecase "Cập nhật vị trí drone" as UC_UpdateLoc
+  usecase "Cập nhật trạng thái drone" as UC_UpdateStatus
+  usecase "Xóa drone demo" as UC_DeleteDrone
+}
+
+package "Quản lý Sản phẩm/Cửa hàng" {
+  usecase "CRUD Sản phẩm" as UC_ProductCRUD
+  usecase "CRUD Danh mục" as UC_CategoryCRUD
+  usecase "CRUD Cửa hàng" as UC_StoreCRUD
+}
+
+package "Người dùng & Địa chỉ" {
+  usecase "Đăng ký / Đăng nhập" as UC_Auth
+  usecase "Quản lý địa chỉ nhận" as UC_Address
+  usecase "Admin quản lý người dùng" as UC_UserAdmin
+}
+
+User --> UC_Order
+User --> UC_Pay
+User --> UC_Track
+User --> UC_Cancel
+User --> UC_Auth
+User --> UC_Address
+
+Admin --> UC_ProductCRUD
+Admin --> UC_CategoryCRUD
+Admin --> UC_StoreCRUD
+Admin --> UC_RegDrone
+Admin --> UC_UpdateLoc
+Admin --> UC_UpdateStatus
+Admin --> UC_DeleteDrone
+Admin --> UC_UserAdmin
+
+Drone --> UC_UpdateLoc
+Drone --> UC_UpdateStatus
+
+UC_Pay --> Payment : "Yêu cầu tạo giao dịch"
+UC_Track --> Drone : "Nhận telemetries"
+UC_Order --> UC_Pay : <<include>>
+UC_Order --> UC_Track : <<extend>>
+UC_RegDrone --> UC_UpdateLoc : <<extend>>
+UC_RegDrone --> UC_UpdateStatus : <<extend>>
+@enduml

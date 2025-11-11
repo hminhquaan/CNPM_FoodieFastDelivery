@@ -1,0 +1,43 @@
+@startuml
+actor "Người dùng" as USER
+participant "Frontend (HTML/JS)" as FE
+participant "Backend (Spring Boot)" as BE
+participant "VNPay" as VNP
+database "CSDL (MySQL/H2)" as DB
+participant "DroneService" as DS
+participant "Drone" as DRN
+
+== Duyệt và đặt hàng ==
+USER -> FE: Xem cửa hàng, sản phẩm; thêm vào giỏ
+FE -> BE: GET/POST API giỏ hàng (thêm/sửa/xóa)
+FE -> BE: POST /api/v1/orders (từ giỏ hàng)
+BE -> DB: Lưu Order (PENDING), OrderItem, snapshot địa chỉ
+BE --> FE: Trả về danh sách đơn & URL thanh toán VNPay
+
+== Thanh toán VNPay ==
+FE -> VNP: Redirect tới trang ngân hàng VNPay
+VNP --> FE: Trả về /payments/vnpay-return?vnp_*
+FE -> BE: GET /payments/vnpay-return (hiển thị)
+VNP -> BE: GET /payments/vnpay-ipn?vnp_* (quyết định cuối)
+BE -> BE: Xác thực chữ ký, số tiền, trạng thái
+BE -> DB: Cập nhật PaymentTransaction + Order(PAID)
+
+== Tạo Delivery & Gán drone ==
+BE -> DS: findAvailableDrone(tổng khối lượng, tọa độ cửa hàng, tọa độ nhận)
+DS -> DB: Đọc danh sách Drone (AVAILABLE)
+DS -> DS: Lọc theo tải, pin, khoảng cách; chọn tối ưu
+DS --> BE: Drone được chọn
+BE -> DB: Tạo Delivery (ASSIGNED) gắn với Order + Drone
+BE -> DRN: Cập nhật trạng thái drone IN_FLIGHT (khi LAUNCHED)
+
+== Theo dõi ==
+loop mỗi 1.5s
+  FE -> BE: GET /deliveries/{id}
+  BE -> DB: Đọc trạng thái Delivery
+  BE --> FE: JSON {status, drone, tiến độ}
+end
+
+== Hoàn tất ==
+BE -> DB: Cập nhật Delivery COMPLETED, drone AVAILABLE
+FE -> USER: Hiển thị kết thúc giao hàng
+@enduml

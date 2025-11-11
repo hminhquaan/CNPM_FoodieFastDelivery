@@ -23,6 +23,14 @@ VALUES
  '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', -- password
  'Phạm Minh Quang', '0988000222', 'ACTIVE', '1992-11-05', 'MALE', NOW(), NOW());
 
+-- Admin user (login: admin / password). Change hash if you want a different password.
+INSERT IGNORE INTO users
+ (id, username, email, password_hash, full_name, phone, status, date_of_birth, gender, created_at, updated_at)
+VALUES
+ (50, 'admin', 'admin@test.vn',
+	'$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', -- bcrypt for 'password'
+	'System Administrator', '0900000000', 'ACTIVE', '1990-01-01', 'OTHER', NOW(), NOW());
+
 -- 2. Roles
 INSERT IGNORE INTO roles (id, name) VALUES
 (1, 'USER'),
@@ -33,15 +41,17 @@ INSERT IGNORE INTO roles (id, name) VALUES
 INSERT IGNORE INTO user_role (user_id, role_id) VALUES
 (11, 1),          -- Linh là USER
 (12, 1),          -- Quang là USER
-(12, 2);          -- Quang đồng thời là STORE_OWNER
+(12, 2),          -- Quang đồng thời là STORE_OWNER
+(50, 3);          -- Admin có quyền ADMIN
 
 -- 4. Product Categories (mới)
-INSERT IGNORE INTO product_category (id, name, description, status, created_at, updated_at) VALUES
-(11, 'Pizza',        'Các món pizza Ý',                'ACTIVE', NOW(), NOW()),
-(12, 'Sushi',        'Các món sushi Nhật',             'ACTIVE', NOW(), NOW()),
-(13, 'Bánh mì',      'Bánh mì Việt Nam',               'ACTIVE', NOW(), NOW()),
-(14, 'Cà phê',       'Đồ uống cà phê',                 'ACTIVE', NOW(), NOW()),
-(15, 'Tráng miệng',  'Món ngọt, bánh, kem',            'ACTIVE', NOW(), NOW());
+-- Include slug column to avoid duplicate category creation by ApplicationRunner
+INSERT IGNORE INTO product_category (id, name, slug, description, status, created_at, updated_at) VALUES
+(11, 'Pizza',        'pizza',       'Các món pizza Ý',                'ACTIVE', NOW(), NOW()),
+(12, 'Sushi',        'sushi',       'Các món sushi Nhật',             'ACTIVE', NOW(), NOW()),
+(13, 'Bánh mì',      'banh-mi',     'Bánh mì Việt Nam',               'ACTIVE', NOW(), NOW()),
+(14, 'Cà phê',       'ca-phe',      'Đồ uống cà phê',                 'ACTIVE', NOW(), NOW()),
+(15, 'Tráng miệng',  'trang-mieng', 'Món ngọt, bánh, kem',            'ACTIVE', NOW(), NOW());
 
 -- 5. Stores (khác hoàn toàn, đặt tại Hà Nội/Đà Nẵng)
 INSERT IGNORE INTO store
@@ -51,13 +61,13 @@ VALUES
 (12, 12, 'Sushi Cầu Rồng', 'Sushi & sashimi tươi mỗi ngày ở Đà Nẵng',   '02363556677', 'hello@sushicaurong.vn', NULL, 4.8, 'OPEN', NOW(), NOW()),
 (13, 12, 'Bánh Mì Hồ Gươm', 'Bánh mì kẹp nóng giòn, pate/bò nướng',     '0243344556', 'contact@banhmi-hoguom.vn', NULL, 4.4, 'OPEN', NOW(), NOW());
 
--- 6. Store addresses (tọa độ khác hẳn TP.HCM)
+-- 6. Store addresses (khớp schema entity StoreAddress - address_line, ward, country, flight_corridor_radius)
 INSERT IGNORE INTO store_address
-(id, store_id, street, district, city, latitude, longitude, full_address, created_at, updated_at)
+(id, store_id, address_line, ward, district, city, country, latitude, longitude, flight_corridor_radius, created_at, updated_at)
 VALUES
-(11, 11, '25 Hàng Trống', 'Hoàn Kiếm',    'Hà Nội',   21.028800, 105.852000, '25 Hàng Trống, Hoàn Kiếm, Hà Nội', NOW(), NOW()),
-(12, 12, '99 Bạch Đằng',  'Hải Châu',     'Đà Nẵng',  16.067800, 108.222000, '99 Bạch Đằng, Hải Châu, Đà Nẵng', NOW(), NOW()),
-(13, 13, '12 Lò Sũ',      'Hoàn Kiếm',    'Hà Nội',   21.029900, 105.853500, '12 Lò Sũ, Hoàn Kiếm, Hà Nội', NOW(), NOW());
+(11, 11, '25 Hàng Trống', NULL, 'Hoàn Kiếm', 'Hà Nội', 'VN', 21.028800, 105.852000, 2.0, NOW(), NOW()),
+(12, 12, '99 Bạch Đằng',  NULL, 'Hải Châu',  'Đà Nẵng','VN', 16.067800, 108.222000, 2.0, NOW(), NOW()),
+(13, 13, '12 Lò Sũ',      NULL, 'Hoàn Kiếm', 'Hà Nội', 'VN', 21.029900, 105.853500, 2.0, NOW(), NOW());
 
 -- 7. Products for Store 11 (Pizza)
 INSERT IGNORE INTO product

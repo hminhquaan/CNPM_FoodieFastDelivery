@@ -28,8 +28,16 @@ class AuthManager {
                     roles: r.roles || []
                 };
 
+                // Write to legacy keys
                 localStorage.setItem('authToken', this.token);
                 localStorage.setItem('user', JSON.stringify(this.user));
+                // Also write to shared STORAGE_KEYS for consistency across modules
+                try {
+                    if (typeof STORAGE_KEYS !== 'undefined') {
+                        if (STORAGE_KEYS.TOKEN) localStorage.setItem(STORAGE_KEYS.TOKEN, this.token);
+                        if (STORAGE_KEYS.USER) localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(this.user));
+                    }
+                } catch (_) { /* ignore */ }
 
                 return { success: true, user: this.user };
             } else {
@@ -59,8 +67,16 @@ class AuthManager {
     logout() {
         this.token = null;
         this.user = null;
+        // Remove legacy keys
         localStorage.removeItem('authToken');
         localStorage.removeItem('user');
+        // Also remove shared STORAGE_KEYS
+        try {
+            if (typeof STORAGE_KEYS !== 'undefined') {
+                if (STORAGE_KEYS.TOKEN) localStorage.removeItem(STORAGE_KEYS.TOKEN);
+                if (STORAGE_KEYS.USER) localStorage.removeItem(STORAGE_KEYS.USER);
+            }
+        } catch (_) { /* ignore */ }
         window.location.href = 'index.html';
     }
 

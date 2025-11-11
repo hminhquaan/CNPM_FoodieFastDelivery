@@ -74,5 +74,10 @@ public interface StoreService {
      * Delete product for a store
      */
     void deleteProductForStore(Long storeId, Long productId);
+
+    /**
+     * Update store payment information
+     */
+    StoreResponse updateStorePayment(Long storeId, dto.request.store.StorePaymentRequest request);
 }
 

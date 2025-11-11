@@ -1,0 +1,70 @@
+@startuml
+left to right direction
+skinparam packageStyle rectangle
+skinparam shadowing false
+skinparam actorStyle awesome
+skinparam usecase {
+  BackgroundColor #f9f9f9
+  BorderColor #999
+  ArrowColor #555
+}
+
+actor "Khách hàng" as KH
+actor "Quản trị" as QT
+actor "VNPay" as VNP
+actor "Drone" as DRN
+
+rectangle "Hệ thống FoodFast Delivery" {
+  (Đăng ký) as UC_Signup
+  (Đăng nhập / Làm mới token) as UC_Login
+  (Xem danh sách cửa hàng) as UC_Stores
+  (Xem chi tiết cửa hàng) as UC_StoreDetail
+  (Xem danh mục / sản phẩm) as UC_Catalog
+  (Tìm kiếm sản phẩm) as UC_Search
+  (Quản lý giỏ hàng) as UC_Cart
+  (Chọn địa chỉ nhận hàng (định vị)) as UC_SelectAddr
+  (Đặt hàng (tách theo cửa hàng)) as UC_CreateOrders
+  (Khởi tạo thanh toán VNPay) as UC_PayInit
+  (Xử lý trả về VNPay) as UC_PayReturn
+  (Xử lý IPN VNPay) as UC_PayIPN
+  (Tạo giao vận sau thanh toán) as UC_CreateDelivery
+  (Gán drone phù hợp) as UC_AssignDrone
+  (Theo dõi trạng thái giao hàng) as UC_Track
+  (Hủy đơn hàng) as UC_Cancel
+  (Quản lý cửa hàng) as UC_ManageStores
+  (Quản lý sản phẩm) as UC_ManageProducts
+  (Quản lý đơn hàng) as UC_ManageOrders
+  (Quản lý drone (đăng ký, cập nhật)) as UC_ManageDrones
+  (Mô phỏng thanh toán (dev)) as UC_SimPay
+  (Seed dữ liệu demo (dev)) as UC_Seed
+}
+
+KH --> UC_Signup
+KH --> UC_Login
+KH --> UC_Stores
+KH --> UC_StoreDetail
+KH --> UC_Catalog
+KH --> UC_Search
+KH --> UC_Cart
+KH --> UC_SelectAddr
+KH --> UC_CreateOrders
+KH --> UC_PayInit
+KH --> UC_Track
+KH --> UC_Cancel
+
+QT --> UC_ManageStores
+QT --> UC_ManageProducts
+QT --> UC_ManageOrders
+QT --> UC_ManageDrones
+QT --> UC_Seed
+
+VNP --> UC_PayReturn
+VNP --> UC_PayIPN
+
+UC_PayInit --> UC_PayReturn : <<trả khách về trang kết quả>>
+UC_PayIPN --> UC_CreateDelivery : <<sau khi thanh toán thành công>>
+UC_CreateDelivery --> UC_AssignDrone : <<bao gồm>>
+UC_AssignDrone --> UC_Track : <<khách theo dõi>>
+UC_SimPay --> UC_CreateDelivery : <<chế độ dev>>
+
+@enduml

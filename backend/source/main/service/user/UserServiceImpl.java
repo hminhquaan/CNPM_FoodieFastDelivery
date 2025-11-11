@@ -67,12 +67,19 @@ public class UserServiceImpl implements UserService {
         User user = userRepository.findById(Long.valueOf(userId))
                 .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_EXISTED));
 
-        // Update các field cơ bản
+        // Update các field cơ bản (trừ password nếu không truyền)
+        String incomingPassword = request.getPassword();
+        // Tạm giữ passwordHash hiện tại để tránh mapstruct ghi đè null
+        String existingHash = user.getPasswordHash();
         mapper.updateUser(user, request);
+        if (incomingPassword == null || incomingPassword.isBlank()) {
+            // Khôi phục passwordHash nếu request không có password mới
+            user.setPasswordHash(existingHash);
+        }
 
         // Encode password nếu request có gửi
-        if (request.getPassword() != null && !request.getPassword().isBlank()) {
-            user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
+        if (incomingPassword != null && !incomingPassword.isBlank()) {
+            user.setPasswordHash(passwordEncoder.encode(incomingPassword));
         }
 
         // Update roles nếu có roleIds trong request
@@ -106,7 +113,7 @@ public class UserServiceImpl implements UserService {
     }
 
     public List<UserResponse> getAllUsers() {
-        return userRepository.findAll()
+        return userRepository.findAllWithRoles()
                 .stream()
                 .map(mapper::toResponse)
                 .toList(); // Java 16+ (thay vì Collectors.toList())

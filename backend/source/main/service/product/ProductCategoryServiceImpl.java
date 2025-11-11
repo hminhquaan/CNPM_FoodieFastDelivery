@@ -68,4 +68,15 @@ public class ProductCategoryServiceImpl implements ProductCategoryService {
         List<ProductCategory> categories = productCategoryRepository.findAll();
         return productCategoryMapper.toProductCategoryResponse(categories);
     }
+
+    @Override
+    public ProductCategoryResponse getCategoryById(Long id) {
+        // Defensive null check for id to avoid potential NPE or unchecked conversion warnings
+        if (id == null) {
+            throw new AppException(ErrorCode.CATEGORY_NOT_EXISTED);
+        }
+        ProductCategory productCategory = productCategoryRepository.findById(id)
+                .orElseThrow(() -> new AppException(ErrorCode.CATEGORY_NOT_EXISTED));
+        return productCategoryMapper.toProductCategoryResponse(productCategory);
+    }
 }

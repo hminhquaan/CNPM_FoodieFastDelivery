@@ -1,0 +1,167 @@
+@startuml
+' ERD chính các bảng
+hide methods
+hide stereotypes
+skinparam linetype ortho
+skinparam classAttributeIconSize 0
+skinparam defaultFontName Arial
+
+class users {
+  + id: BIGINT <<PK>>
+  username: varchar
+  email: varchar
+  password_hash: varchar
+  full_name: varchar
+  phone: varchar
+  status: enum
+  created_at: datetime
+  updated_at: datetime
+}
+
+class roles {
+  + id: BIGINT <<PK>>
+  name: varchar
+}
+
+class user_role {
+  user_id: BIGINT <<FK users.id>>
+  role_id: BIGINT <<FK roles.id>>
+}
+
+class product_category {
+  + id: BIGINT <<PK>>
+  name: varchar
+  slug: varchar
+  status: enum
+}
+
+class store {
+  + id: BIGINT <<PK>>
+  owner_user_id: BIGINT <<FK users.id>>
+  name: varchar
+  status: enum
+  created_at: datetime
+}
+
+class store_address {
+  + id: BIGINT <<PK>>
+  store_id: BIGINT <<FK store.id>>
+  address_line: varchar
+  city: varchar
+  latitude: decimal
+  longitude: decimal
+  flight_corridor_radius: decimal
+}
+
+class product {
+  + id: BIGINT <<PK>>
+  store_id: BIGINT <<FK store.id>>
+  category_id: BIGINT <<FK product_category.id>>
+  sku: varchar
+  name: varchar
+  base_price: decimal
+  weight_gram: int
+  quantity_available: int
+  status: enum
+}
+
+class cart {
+  + id: BIGINT <<PK>>
+  user_id: BIGINT <<FK users.id>>
+  status: enum
+}
+
+class cart_item {
+  + id: BIGINT <<PK>>
+  cart_id: BIGINT <<FK cart.id>>
+  product_id: BIGINT <<FK product.id>>
+  quantity: int
+}
+
+class orders {
+  + id: BIGINT <<PK>>
+  user_id: BIGINT <<FK users.id>>
+  total_amount: decimal
+  status: enum
+  created_at: datetime
+}
+
+class order_item {
+  + id: BIGINT <<PK>>
+  order_id: BIGINT <<FK orders.id>>
+  product_id: BIGINT <<FK product.id>>
+  quantity: int
+  unit_price: decimal
+}
+
+class payment_transaction {
+  + id: BIGINT <<PK>>
+  order_id: BIGINT <<FK orders.id>>
+  provider: varchar
+  amount: decimal
+  status: enum
+  signature: varchar
+}
+
+class user_address {
+  + id: BIGINT <<PK>>
+  user_id: BIGINT <<FK users.id>>
+  label: varchar
+  latitude: decimal
+  longitude: decimal
+  full_address: varchar
+  is_default: bool
+}
+
+class drone {
+  + id: BIGINT <<PK>>
+  code: varchar
+  model: varchar
+  max_payload_gram: int
+  status: enum
+  current_battery_percent: int
+  last_latitude: decimal
+  last_longitude: decimal
+}
+
+class delivery {
+  + id: BIGINT <<PK>>
+  order_id: BIGINT <<FK orders.id>>
+  drone_id: BIGINT <<FK drone.id>>
+  pickup_store_id: BIGINT <<FK store.id>>
+  current_status: enum
+  dropoff_address_snapshot: json
+}
+
+class flight_plan {
+  + id: BIGINT <<PK>>
+  delivery_id: BIGINT <<FK delivery.id>>
+}
+
+class flight_plan_point {
+  + id: BIGINT <<PK>>
+  flight_plan_id: BIGINT <<FK flight_plan.id>>
+  sequence_no: int
+  latitude: decimal
+  longitude: decimal
+}
+
+users ||--o{ user_role
+roles ||--o{ user_role
+users ||--o{ user_address
+users ||--o{ cart
+users ||--o{ orders
+store ||--o{ product
+product_category ||--o{ product
+store ||--o{ store_address
+orders ||--o{ order_item
+orders ||--|| payment_transaction
+orders ||--|| delivery
+product ||--o{ order_item
+cart ||--o{ cart_item
+product ||--o{ cart_item
+drone ||--o{ delivery
+store ||--o{ delivery
+flight_plan ||--o{ flight_plan_point
+delivery ||--|| flight_plan
+@enduml

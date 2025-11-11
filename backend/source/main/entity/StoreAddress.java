@@ -44,7 +44,7 @@ public class StoreAddress {
     @Column(name = "longitude")
     Double longitude;
 
-    @Column(name = "flightCorridorRadius")
+    @Column(name = "flight_corridor_radius")
     Double flightCorridorRadius; // Bán kính hành lang bay an toàn (km)
 
     @Column(name = "updated_at",updatable = false, insertable = false)

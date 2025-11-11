@@ -1,6 +1,6 @@
 <mxfile host="app.diagrams.net" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36 Edg/142.0.0.0" version="28.2.9">
   <diagram name="Trang-1" id="7oioB8Ds-hKn1IXtVaSV">
-    <mxGraphModel dx="1042" dy="574" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+    <mxGraphModel dx="1489" dy="820" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -121,14 +121,6 @@
           <mxGeometry x="330" y="600" width="180" height="90" as="geometry" />
         </mxCell>
         <mxCell id="RoGavW0lUJBGYU2Ly-MI-45" value="" style="shape=module;jettyWidth=8;jettyHeight=4;" parent="RoGavW0lUJBGYU2Ly-MI-44" vertex="1">
-          <mxGeometry x="1" width="20" height="20" relative="1" as="geometry">
-            <mxPoint x="-27" y="7" as="offset" />
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="RoGavW0lUJBGYU2Ly-MI-46" value="«Component»&lt;br&gt;&lt;b&gt;account&lt;/b&gt;" style="html=1;dropTarget=0;whiteSpace=wrap;" parent="1" vertex="1">
-          <mxGeometry x="40" y="600" width="180" height="90" as="geometry" />
-        </mxCell>
-        <mxCell id="RoGavW0lUJBGYU2Ly-MI-47" value="" style="shape=module;jettyWidth=8;jettyHeight=4;" parent="RoGavW0lUJBGYU2Ly-MI-46" vertex="1">
           <mxGeometry x="1" width="20" height="20" relative="1" as="geometry">
             <mxPoint x="-27" y="7" as="offset" />
           </mxGeometry>
@@ -311,25 +303,13 @@
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="RoGavW0lUJBGYU2Ly-MI-96" value="" style="rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=halfCircle;endFill=0;endSize=6;strokeWidth=1;sketch=0;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" parent="1" source="RoGavW0lUJBGYU2Ly-MI-46" edge="1">
+        <mxCell id="RoGavW0lUJBGYU2Ly-MI-96" value="" style="rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=halfCircle;endFill=0;endSize=6;strokeWidth=1;sketch=0;" parent="1" source="RoGavW0lUJBGYU2Ly-MI-2" edge="1">
           <mxGeometry relative="1" as="geometry">
-            <mxPoint x="160" y="770" as="sourcePoint" />
+            <mxPoint x="130" y="689.9999999999998" as="sourcePoint" />
             <mxPoint x="1060" y="770" as="targetPoint" />
             <Array as="points">
               <mxPoint x="130" y="770" />
             </Array>
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="RoGavW0lUJBGYU2Ly-MI-97" value="" style="rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=halfCircle;endFill=0;endSize=6;strokeWidth=1;sketch=0;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" parent="1" source="RoGavW0lUJBGYU2Ly-MI-2" edge="1">
-          <mxGeometry relative="1" as="geometry">
-            <mxPoint x="40" y="450" as="sourcePoint" />
-            <mxPoint x="130" y="480" as="targetPoint" />
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="RoGavW0lUJBGYU2Ly-MI-98" value="" style="rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=oval;endFill=0;sketch=0;sourcePerimeterSpacing=0;targetPerimeterSpacing=0;endSize=10;exitX=0.5;exitY=0;exitDx=0;exitDy=0;" parent="1" source="RoGavW0lUJBGYU2Ly-MI-46" edge="1">
-          <mxGeometry relative="1" as="geometry">
-            <mxPoint x="290" y="500" as="sourcePoint" />
-            <mxPoint x="130" y="480" as="targetPoint" />
           </mxGeometry>
         </mxCell>
       </root>

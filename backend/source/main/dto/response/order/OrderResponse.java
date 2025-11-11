@@ -21,6 +21,9 @@ public class OrderResponse {
     Long userId;
     Long storeId;
     String storeName;
+    // Enriched buyer info for admin & frontend visibility
+    String customerName; // prefers fullName, fallback username
+    String customerEmail;
 
     OrderStatus status;
     PaymentStatus paymentStatus;

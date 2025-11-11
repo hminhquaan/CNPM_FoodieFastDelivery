@@ -24,5 +24,8 @@ public class PaymentInitRequest {
 
     String returnUrl;
     String cancelUrl;
+
+    // Optional: prefer a specific VNPay payment channel (e.g., "VNPAYQR" for QR code)
+    String bankCode;
 }
 

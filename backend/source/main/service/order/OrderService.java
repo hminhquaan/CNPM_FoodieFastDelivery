@@ -35,6 +35,11 @@ public interface OrderService {
     List<OrderResponse> getOrdersByStoreId(Long storeId);
 
     /**
+     * Get all orders (admin use)
+     */
+    List<OrderResponse> getAllOrders();
+
+    /**
      * Cancel order
      */
     void cancelOrder(Long orderId);

@@ -4,7 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Foodie - Giỏ Hàng</title>
-    <link rel="stylesheet" href="css/style.css">
+    <link rel="icon" type="image/svg+xml" href="img/favicon-main.svg">
+    <meta name="theme-color" content="#ff6b6b">
+    <link rel="stylesheet" href="css/style.css?v=20251111">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 <body>
@@ -19,7 +21,7 @@
                 <nav class="nav">
                     <a href="index.html" class="nav-link">Trang chủ</a>
                     <a href="stores.html" class="nav-link">Cửa hàng</a>
-                    <a href="orders.html" class="nav-link">Đơn hàng</a>
+                    <!-- Đơn hàng di chuyển vào avatar dropdown -->
                 </nav>
                 <div class="header-actions">
                     <a href="cart.html" class="btn btn-outline btn-sm" aria-label="Giỏ hàng">
@@ -31,7 +33,7 @@
                             <button class="btn btn-outline btn-sm" onclick="window.location.href='index.html'">Đăng nhập</button>
                         </div>
                         <div class="user-dropdown" id="userDropdown" style="display: none;">
-                            <button class="user-avatar" onclick="toggleDropdown()">
+                            <button id="userAvatar" class="user-avatar" onclick="toggleDropdown()" aria-haspopup="true" aria-expanded="false">
                                 <i class="fas fa-user-circle"></i>
                                 <span id="userName"></span>
                             </button>
@@ -123,8 +125,8 @@
         </div>
     </section>
 
-    <script src="js/config.js"></script>
-    <script src="js/cart.js"></script>
+    <script src="js/config.js?v=20251111"></script>
+    <script src="js/cart.js?v=20251111"></script>
 </body>
 </html>
 

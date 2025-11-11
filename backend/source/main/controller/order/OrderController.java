@@ -61,6 +61,22 @@ public class OrderController {
                 .build());
     }
 
+        /**
+         * Get all orders (admin)
+         */
+        @GetMapping
+        public ResponseEntity<APIResponse<List<OrderResponse>>> getAllOrders() {
+                log.info("Getting all orders");
+
+                List<OrderResponse> responses = orderService.getAllOrders();
+
+                return ResponseEntity.ok(APIResponse.<List<OrderResponse>>builder()
+                                .code(200)
+                                .message("Orders retrieved successfully")
+                                .result(responses)
+                                .build());
+        }
+
     /**
      * Get order by order code
      */

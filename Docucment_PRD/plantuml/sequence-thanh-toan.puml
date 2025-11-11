@@ -1,0 +1,26 @@
+@startuml
+' Sequence: Thanh toán đơn hàng (User -> FE -> BE -> Payment -> DB)
+skinparam defaultFontName Arial
+actor "Người dùng" as U
+participant "Frontend (Web)" as FE
+participant "Backend (Spring Boot)" as BE
+participant "Cổng thanh toán" as PG
+database "CSDL MySQL" as DB
+
+U -> FE : Chọn sản phẩm, tạo đơn hàng
+FE -> BE : POST /api/orders (chi tiết giỏ, địa chỉ)
+BE -> DB : Lưu Order(status=CREATED)
+BE --> FE : 201 Created + orderId
+
+U -> FE : Bấm "Thanh toán"
+FE -> BE : POST /api/payments/init {orderId, provider}
+BE -> DB : Tạo PaymentTransaction(status=PENDING)
+BE -> PG : Tạo giao dịch + tham số ký
+PG --> U : Trang thanh toán / QR / mô phỏng dev
+
+PG -> BE : IPN/return + chữ ký
+BE -> PG : Xác thực chữ ký/amount
+BE -> DB : Cập nhật Payment(SUCCESS) + Order(PAID)
+BE -> DB : Tạo Delivery(QUEUED), thử gán drone
+BE --> FE : 200 + link/trạng thái theo dõi
+@enduml

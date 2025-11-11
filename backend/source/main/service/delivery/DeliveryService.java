@@ -5,6 +5,9 @@ import repository.drone.DroneRepository;
 import service.drone.DroneService;
 import repository.order.OrderRepository;
 import repository.store.StoreRepository;
+import repository.store.StoreAddressRepository;
+import repository.order.OrderItemRepository;
+import repository.product.ProductRepository;
 import dto.request.delivery.AssignDroneRequest;
 import dto.request.delivery.CreateDeliveryRequest;
 import dto.request.delivery.UpdateDeliveryStatusRequest;
@@ -37,6 +40,9 @@ public class DeliveryService {
     private final DroneRepository droneRepository;
     private final StoreRepository storeRepository;
     private final DroneService droneService;
+    private final StoreAddressRepository storeAddressRepository;
+    private final OrderItemRepository orderItemRepository;
+    private final ProductRepository productRepository;
 
     /**
      * Tạo delivery mới khi order được thanh toán thành công
@@ -71,6 +77,20 @@ public class DeliveryService {
         delivery = deliveryRepository.save(delivery);
         log.info("Delivery created with ID: {}", delivery.getId());
 
+        // Attempt auto-assign once; if no drone, keep QUEUED (do NOT cancel order or mark FAILED).
+        try {
+            DeliveryResponse assigned = autoAssignDrone(delivery.getId());
+            if (assigned.getCurrentStatus() == DeliveryStatus.ASSIGNED) {
+                startAutoProgressThread(assigned.getId());
+                return assigned;
+            }
+        } catch (AppException ex) {
+            if (ex.getErrorCode() == ErrorCode.NO_AVAILABLE_DRONE) {
+                log.info("No available drone now; delivery {} remains QUEUED for later assignment", delivery.getId());
+            } else {
+                log.warn("Auto-assign after create failed (non-drone-availability): {}", ex.getMessage());
+            }
+        }
         return toDeliveryResponse(delivery);
     }
 
@@ -128,23 +148,91 @@ public class DeliveryService {
         Store store = storeRepository.findById(delivery.getPickupStoreId())
                 .orElseThrow(() -> new AppException(ErrorCode.STORE_NOT_EXISTED));
 
-        // Parse delivery address để lấy tọa độ
-        // TODO: Implement proper address parsing
-        // Giả định có lat/lng trong deliveryAddressSnapshot
-        Double storeLat = 10.762622; // TODO: Get from store
-        Double storeLng = 106.660172;
-        Double customerLat = 10.772622; // TODO: Parse from delivery address
-        Double customerLng = 106.670172;
+        // Lấy tọa độ cửa hàng
+        Double storeLat = null, storeLng = null;
+        var addresses = storeAddressRepository.findByStore_Id(store.getId());
+        if (!addresses.isEmpty()) {
+            var addr = addresses.get(0);
+            storeLat = addr.getLatitude();
+            storeLng = addr.getLongitude();
+        }
 
-        // Tìm drone phù hợp (giả định trọng lượng 500g)
+        // Parse tọa độ khách từ snapshot JSON: hỗ trợ cả key lat/lng hoặc latitude/longitude
+        Double customerLat = null, customerLng = null;
+        try {
+            String snap = order.getDeliveryAddressSnapshot();
+            if (snap != null && snap.trim().startsWith("{")) {
+                // Dùng Jackson nếu có trong classpath (Spring Boot có sẵn). Fallback regex nếu lỗi.
+                try {
+                    com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                    java.util.Map<String, Object> map = mapper.readValue(snap, new com.fasterxml.jackson.core.type.TypeReference<java.util.Map<String, Object>>() {});
+                    Object latObj = map.get("lat");
+                    Object lngObj = map.get("lng");
+                    // Hỗ trợ cả "latitude" / "longitude" từ dữ liệu seed cũ
+                    if (latObj == null) latObj = map.get("latitude");
+                    if (lngObj == null) lngObj = map.get("longitude");
+                    if (latObj instanceof Number) customerLat = ((Number) latObj).doubleValue();
+                    else if (latObj instanceof String) customerLat = Double.parseDouble(((String) latObj).trim());
+                    if (lngObj instanceof Number) customerLng = ((Number) lngObj).doubleValue();
+                    else if (lngObj instanceof String) customerLng = Double.parseDouble(((String) lngObj).trim());
+                } catch (Exception jex) {
+                    log.warn("Jackson parse snapshot thất bại: {}", jex.getMessage());
+                    // Fallback regex
+                    try {
+                        java.util.regex.Matcher mLat = java.util.regex.Pattern.compile("\"(lat|latitude)\"\\s*:\\s*([-0-9.]+)").matcher(snap);
+                        if (mLat.find()) customerLat = Double.parseDouble(mLat.group(2));
+                        java.util.regex.Matcher mLng = java.util.regex.Pattern.compile("\"(lng|longitude)\"\\s*:\\s*([-0-9.]+)").matcher(snap);
+                        if (mLng.find()) customerLng = Double.parseDouble(mLng.group(2));
+                    } catch (Exception rex) {
+                        log.warn("Regex parse snapshot thất bại: {}", rex.getMessage());
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Parse tọa độ khách thất bại: {}", e.getMessage());
+        }
+
+    // Fallback nếu thiếu dữ liệu (tọa độ demo gần nhau để tránh khoảng cách quá xa)
+    if (storeLat == null || storeLng == null) { storeLat = 10.762622; storeLng = 106.660172; }
+    if (customerLat == null || customerLng == null) { customerLat = 10.764200; customerLng = 106.662300; }
+
+        // Tính trọng lượng (gram) từ order items
+        int weightGram = orderItemRepository.findByOrderId(order.getId()).stream()
+                .map(item -> {
+                    var p = productRepository.findById(item.getProductId()).orElse(null);
+                    int w = (p!=null && p.getWeightGram()!=null) ? p.getWeightGram() : 250;
+                    return w * (item.getQuantity()==null?1:item.getQuantity());
+                })
+                .reduce(0, Integer::sum);
+        if (weightGram <= 0) weightGram = 500;
+
+        // Tìm drone phù hợp theo khoảng cách và trọng lượng
         var droneResponse = droneService.findAvailableDroneForDelivery(
-                500, // TODO: Calculate actual weight from order items
+                weightGram,
                 storeLat, storeLng,
                 customerLat, customerLng
         );
 
         // Gán drone tìm được
         return assignDrone(deliveryId, droneResponse.getId());
+    }
+
+    /**
+     * Start background thread to auto progress delivery through flight lifecycle.
+     */
+    private void startAutoProgressThread(Long deliveryId) {
+        new Thread(() -> {
+            try {
+                Thread.sleep(1200); // small delay before launch
+                updateDeliveryStatus(deliveryId, UpdateDeliveryStatusRequest.builder().status(DeliveryStatus.LAUNCHED).build());
+                Thread.sleep(3000);
+                updateDeliveryStatus(deliveryId, UpdateDeliveryStatusRequest.builder().status(DeliveryStatus.ARRIVING).build());
+                Thread.sleep(3000);
+                updateDeliveryStatus(deliveryId, UpdateDeliveryStatusRequest.builder().status(DeliveryStatus.COMPLETED).build());
+            } catch (Exception e) {
+                log.warn("Auto progress thread error for delivery {}: {}", deliveryId, e.getMessage());
+            }
+        }, "delivery-auto-progress-" + deliveryId).start();
     }
 
     /**
@@ -201,7 +289,8 @@ public class DeliveryService {
 
             case FAILED:
                 // Giao hàng thất bại
-                order.setStatus(OrderStatus.CANCELLED);
+                // Do not cancel the order on delivery failure; keep the paid/order state unchanged.
+                // Refund or customer support actions should be handled explicitly elsewhere.
 
                 // Cập nhật drone về trạng thái AVAILABLE
                 if (delivery.getDroneId() != null) {
@@ -216,7 +305,8 @@ public class DeliveryService {
 
             case RETURNED:
                 // Drone quay về vì lý do nào đó
-                order.setStatus(OrderStatus.CANCELLED);
+                // Do not cancel the order automatically when drone returned.
+                // Keep current order status to allow retry/re-schedule or manual handling.
 
                 if (delivery.getDroneId() != null) {
                     Drone drone = droneRepository.findById(delivery.getDroneId())
@@ -281,7 +371,7 @@ public class DeliveryService {
     private void validateStatusTransition(DeliveryStatus from, DeliveryStatus to) {
         // Define valid transitions
         boolean isValid = switch (from) {
-            case QUEUED -> to == DeliveryStatus.ASSIGNED;
+            case QUEUED -> to == DeliveryStatus.ASSIGNED || to == DeliveryStatus.FAILED;
             case ASSIGNED -> to == DeliveryStatus.LAUNCHED || to == DeliveryStatus.FAILED;
             case LAUNCHED -> to == DeliveryStatus.ARRIVING || to == DeliveryStatus.FAILED || to == DeliveryStatus.RETURNED;
             case ARRIVING -> to == DeliveryStatus.COMPLETED || to == DeliveryStatus.FAILED || to == DeliveryStatus.RETURNED;

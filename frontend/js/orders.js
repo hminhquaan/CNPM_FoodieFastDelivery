@@ -2,13 +2,119 @@
 
 let selectedOrder = null;
 let deliveryInfo = null;
+let deliveryPath = [];
+let deliveryMap = null;
+let deliveryPolyline = null;
+let droneMarker = null;
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', () => {
+    // Disable service worker caching in dev to avoid stale assets
+    if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister()));
+            if (window.caches && window.caches.keys) {
+                caches.keys().then(keys => keys.forEach(k => caches.delete(k)));
+            }
+        }
+    }
     checkAuthAndLoadOrders();
     checkAuthStatus();
     updateCartBadge();
 });
+
+// -- Map & Path helpers (global) --
+async function ensureDeliveryPath(delivery) {
+    if (deliveryPath && deliveryPath.length) return;
+    if (!delivery || !delivery.id) return;
+    try {
+        const resp = await fetch(`${API_CONFIG.BASE_URL}/api/v1/deliveries/${delivery.id}/flight-plan`, {
+            headers: APIHelper.getAuthHeaders()
+        });
+        if (resp.ok) {
+            const data = await resp.json();
+            const points = (data.result || data || []).map(p => [Number(p.latitude), Number(p.longitude)]).filter(a => !a.some(isNaN));
+            if (points.length) {
+                deliveryPath = points;
+                return;
+            }
+        }
+    } catch(e) {
+        console.warn('Flight plan fetch failed, fallback to synthetic path', e);
+    }
+    // Fallback synthetic path (legacy)
+    let dropLat = null, dropLng = null;
+    try {
+        const snap = delivery && delivery.dropoffAddressSnapshot;
+        if (snap && snap.includes('lat') && snap.includes('lng')) {
+            const latMatch = snap.match(/"lat"\s*:\s*([-0-9.]+)/);
+            const lngMatch = snap.match(/"lng"\s*:\s*([-0-9.]+)/);
+            if (latMatch) dropLat = parseFloat(latMatch[1]);
+            if (lngMatch) dropLng = parseFloat(lngMatch[1]);
+        }
+    } catch (_) {}
+    const storeLat = 10.762622, storeLng = 106.660172;
+    if (dropLat == null || isNaN(dropLat)) dropLat = 10.772622;
+    if (dropLng == null || isNaN(dropLng)) dropLng = 106.670172;
+    const start = [storeLat, storeLng];
+    const end = [dropLat, dropLng];
+    const points = [];
+    const steps = 12;
+    for (let i=0;i<=steps;i++) {
+        const t = i/steps;
+        const lat = start[0] + (end[0]-start[0])*t + (Math.sin(t*Math.PI)*0.0025);
+        const lng = start[1] + (end[1]-start[1])*t + (Math.sin(t*Math.PI)*0.0025);
+        points.push([lat,lng]);
+    }
+    deliveryPath = points;
+}
+
+function initDeliveryMap(delivery) {
+    const mapEl = document.getElementById('deliveryMap');
+    if (!mapEl) return;
+    mapEl.style.display = 'block';
+    // If the container was re-rendered, Leaflet map's container may differ. Recreate map if needed.
+    if (deliveryMap && deliveryMap._container !== mapEl) {
+        try { deliveryMap.remove(); } catch(_) {}
+        deliveryMap = null;
+        deliveryPolyline = null;
+        droneMarker = null;
+    }
+    if (!deliveryMap) {
+        deliveryMap = L.map('deliveryMap');
+        deliveryMap.setView(deliveryPath[0], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(deliveryMap);
+        deliveryPolyline = L.polyline(deliveryPath, { color: '#2563eb', weight: 4, opacity: .8 }).addTo(deliveryMap);
+        droneMarker = L.marker(deliveryPath[0], { title: 'Drone' }).addTo(deliveryMap);
+        deliveryMap.fitBounds(deliveryPolyline.getBounds(), { padding: [20,20] });
+    }
+}
+
+function updateDroneOnPath(delivery) {
+    if (!droneMarker || !deliveryPath.length) return;
+    const order = ['QUEUED','ASSIGNED','LAUNCHED','ARRIVING','COMPLETED'];
+    const idx = order.indexOf(delivery.currentStatus);
+    if (idx < 0) return;
+    // Convert to fraction (0..1)
+    let fraction = idx/(order.length-1);
+    // If in flight statuses, add smooth progression using time since departure
+    if (delivery.actualDepartureTime && ['LAUNCHED','ARRIVING','COMPLETED'].includes(delivery.currentStatus)) {
+        try {
+            const dep = new Date(delivery.actualDepartureTime).getTime();
+            const now = Date.now();
+            const elapsed = (now - dep)/1000; // seconds
+            const estTotal = deliveryPath.length * 5; // demo speed
+            const dynamicProgress = Math.min(1, elapsed/estTotal);
+            fraction = Math.max(fraction, dynamicProgress);
+        } catch(_) {}
+    }
+    const targetIndex = Math.min(deliveryPath.length-1, Math.round(fraction*(deliveryPath.length-1)) );
+    const coord = deliveryPath[targetIndex];
+    droneMarker.setLatLng(coord);
+}
 
 // Check auth and redirect if not logged in
 function checkAuthAndLoadOrders() {
@@ -99,7 +205,7 @@ function displayOrders(orders) {
                     ${order.items && order.items.length > 0 ? order.items.map(item => `
                         <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
                             <span>${item.productName || 'Sản phẩm'} x ${item.quantity || 1}</span>
-                            <span class="text-gray">${FormatHelper.currency(item.price * item.quantity)}</span>
+                            <span class="text-gray">${FormatHelper.currency(item.totalPrice || 0)}</span>
                         </div>
                     `).join('') : '<p class="text-gray">Không có sản phẩm</p>'}
                 </div>
@@ -112,6 +218,11 @@ function displayOrders(orders) {
                         <button class="btn btn-outline btn-sm" onclick="viewOrderDetail(${order.id})">
                             <i class="fas fa-eye"></i> Chi tiết
                         </button>
+                        ${(order.status === 'PENDING_PAYMENT' || (order.status === 'CREATED' && (order.paymentStatus === 'FAILED' || order.paymentStatus === 'PENDING'))) ? `
+                            <button class="btn btn-primary btn-sm" onclick="retryPayment(${order.id})">
+                                <i class="fas fa-redo"></i> Thanh toán lại
+                            </button>
+                        ` : ''}
                         ${order.status === 'IN_DELIVERY' || order.status === 'PAID' ? `
                             <button class="btn btn-primary btn-sm" onclick="trackDelivery(${order.id})">
                                 <i class="fas fa-drone"></i> Theo dõi
@@ -184,6 +295,30 @@ async function viewOrderDetail(orderId) {
     }
 }
 
+// Retry payment for an order in PENDING_PAYMENT
+async function retryPayment(orderId) {
+    try {
+        Loading.show();
+        const payload = {
+            orderId: orderId,
+            provider: 'VNPAY',
+            method: 'QR'
+        };
+        const res = await APIHelper.post(API_CONFIG.ENDPOINTS.PAYMENT_INIT, payload);
+        const payment = res && res.result ? res.result : res;
+        if (payment && payment.paymentUrl) {
+            window.location.href = payment.paymentUrl;
+        } else {
+            Toast.error('Không lấy được link thanh toán');
+        }
+    } catch (err) {
+        console.error('Retry payment error:', err);
+        Toast.error(err.message || 'Không thể khởi tạo lại thanh toán');
+    } finally {
+        Loading.hide();
+    }
+}
+
 // Display order detail
 function displayOrderDetail(order) {
     const content = document.getElementById('orderDetailContent');
@@ -228,11 +363,11 @@ function displayOrderDetail(order) {
                             <div>
                                 <div style="font-weight: 500;">${item.productName}</div>
                                 <div class="text-gray" style="font-size: 0.9rem;">
-                                    ${FormatHelper.currency(item.price)} x ${item.quantity}
+                                    ${FormatHelper.currency(item.unitPrice || 0)} x ${item.quantity}
                                 </div>
                             </div>
                             <div style="font-weight: bold; color: var(--primary-color);">
-                                ${FormatHelper.currency(item.price * item.quantity)}
+                                ${FormatHelper.currency(item.totalPrice || 0)}
                             </div>
                         </div>
                     `).join('') : '<p class="text-gray">Không có sản phẩm</p>'}
@@ -273,17 +408,25 @@ function displayOrderDetail(order) {
 async function trackDelivery(orderId) {
     try {
         Loading.show();
+        console.log('[trackDelivery] orderId=', orderId);
 
         const response = await APIHelper.get(API_CONFIG.ENDPOINTS.DELIVERY_BY_ORDER(orderId));
-        deliveryInfo = response.result;
+        console.log('[trackDelivery] deliveryByOrder response=', response);
+        deliveryInfo = response && response.result ? response.result : null;
 
         if (!deliveryInfo) {
-            Toast.info('Chưa có thông tin giao hàng');
+            Toast.warning('Đơn hàng chưa tạo Delivery. Vui lòng thử lại sau khi thanh toán thành công.');
             return;
         }
-
-        displayDeliveryTracking(deliveryInfo);
+        // Show tracking immediately
+        await ensureDeliveryPath(deliveryInfo);
+    displayDeliveryTracking(deliveryInfo);
         document.getElementById('trackingModal').classList.add('show');
+        initDeliveryMap(deliveryInfo);
+        updateDroneOnPath(deliveryInfo);
+    // Khởi động polling một lần sau khi hiển thị ban đầu
+    startDeliveryPolling(deliveryInfo.id, deliveryInfo.currentStatus);
+        return;
 
     } catch (error) {
         console.error('Error loading delivery:', error);
@@ -296,6 +439,8 @@ async function trackDelivery(orderId) {
 // Display delivery tracking
 function displayDeliveryTracking(delivery) {
     const content = document.getElementById('trackingContent');
+    // Preserve existing map element so we don't lose it when updating content
+    const existingMap = document.getElementById('deliveryMap');
 
     const statusSteps = [
         { key: 'QUEUED', label: 'Đang chờ', icon: 'clock' },
@@ -307,7 +452,7 @@ function displayDeliveryTracking(delivery) {
 
     const currentIndex = statusSteps.findIndex(s => s.key === delivery.currentStatus);
 
-    content.innerHTML = `
+    const statusHtml = `
         <div style="padding: 1rem 0;">
             <!-- Status Timeline -->
             <div style="margin-bottom: 2rem;">
@@ -374,6 +519,61 @@ function displayDeliveryTracking(delivery) {
             ` : ''}
         </div>
     `;
+    content.innerHTML = statusHtml;
+    // Re-attach map if it existed (or if not, keep placeholder)
+    if (existingMap) {
+        content.appendChild(existingMap);
+        existingMap.style.display = 'block';
+    } else {
+        const mapHolder = document.createElement('div');
+        mapHolder.id = 'deliveryMap';
+        mapHolder.style.cssText = 'margin-top:1rem; height:320px; border:1px solid #eee; border-radius:8px; display:block;';
+        content.appendChild(mapHolder);
+    }
+
+    // Lưu ý: Polling sẽ được kích hoạt một lần trong trackDelivery sau khi hiển thị lần đầu
+}
+
+function startDeliveryPolling(deliveryId, status) {
+    if (['COMPLETED','FAILED','RETURNED'].includes(status)) return;
+    if (window.__deliveryPollInterval) clearInterval(window.__deliveryPollInterval);
+    let attempts = 0;
+    const baseDelay = status === 'QUEUED' ? 4000 : 1500; // chậm hơn khi đang chờ gán drone
+    window.__deliveryPollInterval = setInterval(async () => {
+        try {
+            const res = await APIHelper.get(API_CONFIG.ENDPOINTS.DELIVERY_BY_ORDER(deliveryInfo.orderId));
+            const updated = res.result;
+            if (!updated) return;
+            deliveryInfo = updated;
+            // Stop polling if terminal
+            if (['COMPLETED','FAILED','RETURNED'].includes(updated.currentStatus)) {
+                displayDeliveryTracking(updated);
+                clearInterval(window.__deliveryPollInterval);
+                return;
+            }
+            // If stuck in QUEUED too long => show warning and stop
+            if (updated.currentStatus === 'QUEUED') {
+                attempts++;
+                // Sau 5 lần (~20s) dừng polling để tránh spam (không tự chuyển sang FAILED)
+                if (attempts > 5) {
+                    Toast.warning('Đang chờ drone khả dụng. Bạn có thể thử gán lại.');
+                    displayDeliveryTracking(updated);
+                    clearInterval(window.__deliveryPollInterval);
+                    return;
+                }
+            } else {
+                // Once past QUEUED ensure flight path loaded
+                if (!deliveryPath || deliveryPath.length === 0) {
+                    await ensureDeliveryPath(updated);
+                }
+                initDeliveryMap(updated);
+                updateDroneOnPath(updated);
+            }
+            displayDeliveryTracking(updated);
+        } catch (e) {
+            console.warn('Polling delivery failed:', e.message);
+        }
+    }, baseDelay);
 }
 
 // Get delivery status text
@@ -399,6 +599,10 @@ function closeOrderModal() {
 function closeTrackingModal() {
     document.getElementById('trackingModal').classList.remove('show');
     deliveryInfo = null;
+    if (window.__deliveryPollInterval) {
+        clearInterval(window.__deliveryPollInterval);
+        window.__deliveryPollInterval = null;
+    }
 }
 
 // Update cart badge

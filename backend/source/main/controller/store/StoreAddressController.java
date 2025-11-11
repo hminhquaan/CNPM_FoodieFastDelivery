@@ -12,31 +12,42 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/storesaddresses")
+@RequestMapping("/api/stores/{storeId}/addresses")
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 public class StoreAddressController {
 
     StoreAddressImpl storeAddressService;
 
-    @PostMapping("{storeId}/addresses")
-    public APIResponse<StoreAddressResponse> create(@PathVariable Long storeId, @RequestBody StoreAddressRequest request) {
+    /**
+     * Create new store address
+     * POST /api/stores/{storeId}/addresses
+     */
+    @PostMapping
+    public APIResponse<StoreAddressResponse> create(@PathVariable Long storeId,
+                                                    @RequestBody StoreAddressRequest request) {
         return APIResponse.<StoreAddressResponse>builder()
                 .result(storeAddressService.createAddress(storeId, request))
                 .build();
-
     }
 
+    /**
+     * Update store address
+     * PUT /api/stores/{storeId}/addresses/{addressId}
+     */
     @PutMapping("/{addressId}")
     public APIResponse<StoreAddressResponse> update(@PathVariable Long storeId,
-                                       @PathVariable Long addressId,
-                                       @RequestBody StoreAddressRequest request) {
-        // storeId để đảm bảo address này thuộc đúng store
+                                                    @PathVariable Long addressId,
+                                                    @RequestBody StoreAddressRequest request) {
         return APIResponse.<StoreAddressResponse>builder()
-                .result(storeAddressService.updateAddress(addressId, request))
+                .result(storeAddressService.updateAddress(storeId, addressId, request))
                 .build();
     }
 
+    /**
+     * List all addresses for a store
+     * GET /api/stores/{storeId}/addresses
+     */
     @GetMapping
     public APIResponse<List<StoreAddressResponse>> getAddressByStore(@PathVariable Long storeId) {
         return APIResponse.<List<StoreAddressResponse>>builder()
@@ -44,12 +55,16 @@ public class StoreAddressController {
                 .build();
     }
 
+    /**
+     * Delete a store address
+     * DELETE /api/stores/{storeId}/addresses/{addressId}
+     */
     @DeleteMapping("/{addressId}")
-    public APIResponse<Void> deleteAddress(@PathVariable Long addressId, @PathVariable String storeId) {
-        storeAddressService.deleteAddress(addressId);
+        public APIResponse<Void> deleteAddress(@PathVariable Long storeId,
+                                                                                   @PathVariable Long addressId) {
+                storeAddressService.deleteAddress(storeId, addressId);
         return APIResponse.<Void>builder()
                 .message("Address deleted successfully")
                 .build();
     }
-
 }

@@ -91,8 +91,18 @@ public class DroneService {
         Drone drone = droneRepository.findByCode(code)
                 .orElseThrow(() -> new AppException(ErrorCode.DRONE_NOT_FOUND));
 
-        drone.setStatus(request.getStatus());
+        DroneStatus newStatus = request.getStatus();
+        drone.setStatus(newStatus);
         drone.setLastTelemetryAt(LocalDateTime.now());
+
+        // Auto battery behavior when entering CHARGING
+        if (newStatus == DroneStatus.CHARGING) {
+            Integer current = drone.getCurrentBatteryPercent();
+            if (current == null) current = 0;
+            // Simulate charging step: +20% up to 100%
+            int charged = Math.min(100, current + 20);
+            drone.setCurrentBatteryPercent(charged);
+        }
 
         drone = droneRepository.save(drone);
         return droneMapper.toDroneResponse(drone);
@@ -304,9 +314,13 @@ public class DroneService {
      * Assuming 10% battery per km + 10% safety margin
      */
     private int estimateBatteryRequired(double distanceKm) {
-        int batteryPerKm = 10;
-        int safetyMargin = 10;
-        return (int) Math.ceil(distanceKm * batteryPerKm) + safetyMargin;
+        // Điều chỉnh công thức: 3% mỗi km + 7% safety margin, clamp [15,100]
+        double batteryPerKm = 3.0;
+        int safetyMargin = 7;
+        int required = (int) Math.ceil(distanceKm * batteryPerKm) + safetyMargin;
+        if (required < 15) required = 15; // tối thiểu để tránh 0% trên quãng rất ngắn
+        if (required > 100) required = 100; // không vượt quá 100%
+        return required;
     }
 
     /**

@@ -4,7 +4,11 @@ import dto.request.payment.PaymentInitRequest;
 import dto.request.payment.VnPayWebhookPayload;
 import dto.response.API.APIResponse;
 import dto.response.payment.PaymentResponse;
+import enums.PaymentMethod;
+import enums.PaymentProvider;
 import service.payment.PaymentService;
+import repository.order.OrderRepository;
+import entity.Order;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -21,7 +25,14 @@ import java.util.Map;
 @Slf4j
 public class PaymentController {
 
+    @org.springframework.beans.factory.annotation.Value("${frontend.base-url:http://localhost:3000}")
+    private String frontendBaseUrl;
+
+    @org.springframework.beans.factory.annotation.Value("${app.payments.allow-simulate:false}")
+    private boolean allowSimulate;
+
     private final PaymentService paymentService;
+    private final OrderRepository orderRepository;
 
     @PostMapping("/init")
     public ResponseEntity<APIResponse<PaymentResponse>> initPayment(
@@ -33,6 +44,96 @@ public class PaymentController {
                 .message("Payment initialized successfully")
                 .result(response)
                 .build());
+    }
+
+    /**
+     * Dev-only: simulate a successful VNPay payment to drive order/drone flows without real card.
+     * Enabled only when app.payments.allow-simulate=true (dev profile recommended).
+     */
+    @PostMapping(value = "/simulate-success")
+    public ResponseEntity<APIResponse<Map<String, Object>>> simulateSuccess(@RequestParam("orderId") long orderId) {
+        if (!allowSimulate) {
+            return ResponseEntity.status(403).body(APIResponse.<Map<String, Object>>builder()
+                    .code(403)
+                    .message("Simulate disabled. Set app.payments.allow-simulate=true in dev config.")
+                    .build());
+        }
+        try {
+            // Ensure a payment transaction exists (init if missing or needs retry)
+            PaymentInitRequest initReq = PaymentInitRequest.builder()
+                .orderId(orderId)
+                .provider(PaymentProvider.VNPAY)
+                .method(PaymentMethod.QR)
+                .bankCode("")
+                .build();
+            try {
+                paymentService.initPayment(initReq); // will reuse existing and reset if in FAILED/PENDING
+            } catch (Exception ignored) {
+                // ignore if already PAID or other non‑retryable state; we'll proceed to attempt marking success
+            }
+
+            // Load order & payment transaction
+            Order order = orderRepository.findById(orderId).orElse(null);
+            if (order == null) {
+                Map<String, Object> result = new HashMap<>();
+                result.put("orderId", orderId);
+                result.put("rspCode", "01"); // Order not found
+                return ResponseEntity.ok(APIResponse.<Map<String, Object>>builder()
+                        .code(200)
+                        .message("Order not found")
+                        .result(result)
+                        .build());
+            }
+
+            // We derive orderCode and attempt to reuse existing transaction's vnp_TxnRef so amount/status checks pass
+            String orderCode = order.getOrderCode();
+            String txnRefGuess = null;
+            try {
+                // Reflectively obtain vnpTxnRef from the PaymentTransaction via paymentService (not exposed in PaymentResponse)
+                // Instead of reflection, we will accept generating a fresh ref; IPN logic extracts orderCode only and matches orderId, not ref equality.
+                txnRefGuess = orderCode + "_" + System.currentTimeMillis();
+            } catch (Exception ex) {
+                txnRefGuess = orderCode + "_SIM" + System.currentTimeMillis();
+            }
+
+            // Amount must match expected *100
+            java.math.BigDecimal expectedAmount = order.getTotalPayable().multiply(new java.math.BigDecimal(100));
+            String vnpAmount = String.valueOf(expectedAmount.longValue());
+            String now = new java.text.SimpleDateFormat("yyyyMMddHHmmss").format(new java.util.Date());
+
+            Map<String, String> additional = new HashMap<>();
+            additional.put("vnp_ResponseCode", "00");
+            additional.put("vnp_TransactionStatus", "00");
+            additional.put("vnp_PayDate", now);
+            additional.put("vnp_TxnRef", txnRefGuess);
+            additional.put("vnp_Amount", vnpAmount);
+            additional.put("vnp_OrderInfo", "Thanh toan don hang " + orderCode);
+
+            VnPayWebhookPayload payload = VnPayWebhookPayload.builder()
+                .vnp_ResponseCode("00")
+                .vnp_TransactionStatus("00")
+                .vnp_TxnRef(txnRefGuess)
+                .vnp_Amount(vnpAmount)
+                .vnp_OrderInfo("Thanh toan don hang " + orderCode)
+                .additionalParams(additional)
+                .build();
+
+            String rspCode = paymentService.processVnPayIPN(payload);
+            Map<String, Object> result = new HashMap<>();
+            result.put("orderId", orderId);
+            result.put("rspCode", rspCode);
+            return ResponseEntity.ok(APIResponse.<Map<String, Object>>builder()
+                    .code(200)
+                    .message("Simulated payment success processed")
+                    .result(result)
+                    .build());
+        } catch (Exception e) {
+            log.error("Error simulating payment success: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().body(APIResponse.<Map<String, Object>>builder()
+                    .code(9999)
+                    .message("Simulate failed: " + e.getMessage())
+                    .build());
+        }
     }
 
     @GetMapping(value = "/vnpay-ipn", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -120,8 +221,9 @@ public class PaymentController {
         // Verify signature
         if (!paymentService.verifyVnPaySignature(payload)) {
             log.error("Invalid signature for order: {}", vnp_TxnRef);
-            return ResponseEntity.ok().contentType(MediaType.TEXT_HTML)
-                    .body(buildInvalidSignatureHtml(vnp_TxnRef));
+        return ResponseEntity.ok()
+            .header("Content-Type", "text/html; charset=UTF-8")
+            .body(buildInvalidSignatureHtml(vnp_TxnRef));
         }
 
         String html;
@@ -154,7 +256,9 @@ public class PaymentController {
 
             html = buildFailureHtml(vnp_TxnRef, vnp_ResponseCode, params.get("vnp_OrderInfo"));
         }
-        return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(html);
+    return ResponseEntity.ok()
+        .header("Content-Type", "text/html; charset=UTF-8")
+        .body(html);
     }
 
     @GetMapping("/order/{orderId}")
@@ -168,31 +272,67 @@ public class PaymentController {
     }
 
     private String buildInvalidSignatureHtml(String orderCode) {
-        return "<!DOCTYPE html><html lang='vi'><head><meta charset='UTF-8'><title>Lỗi xác thực</title></head>" +
-                "<body><h1>Chữ ký không hợp lệ</h1><p>Mã đơn hàng: " + orderCode + "</p>" +
-                "<a href='/home'>Quay về trang chủ</a></body></html>";
+        return "<!DOCTYPE html><html lang='vi'><head><meta charset='UTF-8'><title>Lỗi xác thực</title>" + commonHead() + "</head>" +
+                "<body class='pay-result'><div class='pay-wrapper'><div class='pay-card fail'><h1>Chữ ký không hợp lệ</h1><p>Mã đơn hàng: " + orderCode + "</p>" +
+                actionButtons() + "</div></div></body></html>";
     }
 
     private String buildSuccessHtml(String orderCode, String amount, String transactionNo, String payDate, String orderInfo) {
         String formattedAmount = formatAmount(amount);
         String formattedDate = formatDate(payDate);
-        return "<!DOCTYPE html><html lang='vi'><head><meta charset='UTF-8'><title>Thanh toán thành công</title></head>" +
-                "<body><h1>Thanh toán thành công!</h1>" +
-                "<p>Mã đơn hàng: " + orderCode + "</p>" +
-                "<p>Số tiền: " + formattedAmount + " VNĐ</p>" +
-                "<p>Mã giao dịch: " + transactionNo + "</p>" +
-                "<p>Thời gian: " + formattedDate + "</p>" +
-                "<a href='/home/orders.html'>Xem đơn hàng</a></body></html>";
+    return "<!DOCTYPE html><html lang='vi'><head><meta charset='UTF-8'><title>Thanh toán thành công</title>" + commonHead() + "</head>" +
+        "<body class='pay-result'><div class='pay-wrapper'><div class='pay-card success'><h1>Thanh toán thành công</h1>" +
+                "<ul class='details'>" +
+                li("Mã đơn hàng", orderCode) +
+                li("Số tiền", formattedAmount + " VNĐ") +
+                li("Mã giao dịch", transactionNo) +
+                li("Thời gian", formattedDate) +
+                "</ul>" +
+        "<div class='actions'><a class='btn btn-primary' href='" + frontendBaseUrl + "/orders.html'>Xem đơn hàng</a>" +
+        "<a class='btn btn-outline' href='" + frontendBaseUrl + "/index.html'>Trang chủ</a></div>" +
+        "</div></div></body></html>";
     }
 
     private String buildFailureHtml(String orderCode, String responseCode, String orderInfo) {
         String errorMessage = getErrorMessage(responseCode);
-        return "<!DOCTYPE html><html lang='vi'><head><meta charset='UTF-8'><title>Thanh toán thất bại</title></head>" +
-                "<body><h1>Thanh toán thất bại!</h1>" +
-                "<p>Mã đơn hàng: " + orderCode + "</p>" +
-                "<p>Mã lỗi: " + responseCode + "</p>" +
-                "<p>Lý do: " + errorMessage + "</p>" +
-                "<a href='/home/orders.html'>Thử lại</a> | <a href='/home'>Quay về trang chủ</a></body></html>";
+        boolean canRetry = !"24".equals(responseCode); // user-cancelled (24) => no retry button
+        return "<!DOCTYPE html><html lang='vi'><head><meta charset='UTF-8'><title>Thanh toán thất bại</title>" + commonHead() + "</head>" +
+                "<body class='pay-result'><div class='pay-wrapper'><div class='pay-card fail'><h1>Thanh toán thất bại</h1>" +
+                "<ul class='details'>" +
+                li("Mã đơn hàng", orderCode) +
+                li("Mã lỗi", responseCode) +
+                li("Lý do", errorMessage) +
+                (canRetry ? li("Hành động", "Bạn có thể thử thanh toán lại.") : li("Hành động", "Đơn đã hủy, không thể thanh toán lại.")) +
+                "</ul>" +
+                "<div class='actions'>" +
+                (canRetry ? "<a class='btn btn-primary' href='" + frontendBaseUrl + "/orders.html'>Thử lại</a>" : "") +
+                "<a class='btn btn-outline' href='" + frontendBaseUrl + "/index.html'>Trang chủ</a></div>" +
+                "</div></div></body></html>";
+    }
+
+    private String commonHead() {
+        return "<link rel='stylesheet' href='" + frontendBaseUrl + "/css/style.css'>" +
+                "<style>:root{--primary:#3A5A9F;--primary-600:#2F4D8A;--accent:#9DB2CE;--success:#2E7D32;--warning:#B08900;--danger:#B91C1C;--bg:#FAFAFB;--surface:#FFFFFF;--surface-2:#FFFFFF;--text:#111827;--muted:#6B7280;--line:rgba(17,24,39,0.08);--radius:10px;--radius-sm:8px;--shadow-1:0 2px 8px rgba(17,24,39,0.06);--shadow-2:0 6px 20px rgba(17,24,39,0.08);--blur:none;--tr:160ms ease;}" +
+                "body.pay-result{font-family:Inter,system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;margin:0;padding:40px;display:flex;justify-content:center;}" +
+                ".pay-wrapper{width:100%;max-width:640px;}" +
+                ".pay-card{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:36px;box-shadow:var(--shadow-2);}" +
+                ".pay-card.success{border-color:var(--success);} .pay-card.fail{border-color:var(--danger);}" +
+                ".pay-card h1{margin:0 0 22px;font-size:1.9rem;font-weight:900;letter-spacing:.5px;background:linear-gradient(90deg,var(--primary),var(--accent));-webkit-background-clip:text;color:transparent;}" +
+                ".details{list-style:none;padding:0;margin:0 0 28px;display:grid;gap:10px;}" +
+                ".details li{background:color-mix(in srgb,var(--surface),transparent 6%);padding:12px 16px;border-radius:14px;font-size:.95rem;border:1px solid var(--line);}" +
+                ".details li strong{display:block;font-size:.65rem;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);margin-bottom:4px;}" +
+                ".actions{display:flex;gap:14px;flex-wrap:wrap;} .actions .btn{flex:1;}" +
+                "@media(max-width:680px){.pay-card{padding:28px;} .pay-card h1{font-size:1.6rem;}}" +
+                "</style>";
+    }
+
+    private String li(String label, String value) {
+        return "<li><strong>" + label + "</strong>" + (value == null ? "" : value) + "</li>";
+    }
+
+    private String actionButtons() {
+        return "<div class='actions'><a class='btn btn-primary' href='" + frontendBaseUrl + "/index.html'>Trang chủ</a>" +
+                "<a class='btn btn-outline' href='" + frontendBaseUrl + "/orders.html'>Đơn hàng</a></div>";
     }
 
     private String formatAmount(String amount) {
