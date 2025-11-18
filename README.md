@@ -66,7 +66,6 @@ mvn -DskipTests package
 Frontend (Node):
 
 ```powershell
-cd "c:\Users\hmquaan\Downloads\SGU 2022-2027\Sem1 2025-2026\CNPM\FoodFastDelivery\frontend"
 npm install
 ```
 
@@ -75,7 +74,6 @@ npm install
 - Backend (Spring Boot, profile `dev`):
 
 ```powershell
-cd "c:\Users\hmquaan\Downloads\SGU 2022-2027\Sem1 2025-2026\CNPM\FoodFastDelivery"
 $env:SPRING_PROFILES_ACTIVE='dev'; mvn -q spring-boot:run
 # Backend tại http://localhost:8080
 ```
@@ -83,7 +81,6 @@ $env:SPRING_PROFILES_ACTIVE='dev'; mvn -q spring-boot:run
 - Frontend (Express dev server + LiveReload, proxy về backend):
 
 ```powershell
-cd "c:\Users\hmquaan\Downloads\SGU 2022-2027\Sem1 2025-2026\CNPM\FoodFastDelivery\frontend"
 npm run dev
 # Frontend tại http://localhost:3000 (proxy /api, /auth, /drones ... → http://localhost:8080)
 ```
@@ -93,26 +90,7 @@ Gợi ý:
 - Tắt live-reload: `npm run dev:nolive`
 - Đổi backend URL tạm thời: `BACKEND_URL=http://localhost:8080 npm run dev`
 
-### 4) Chạy kiểu “production” cục bộ (không Docker)
-
-Build backend JAR và chạy:
-
-```powershell
-cd "c:\Users\hmquaan\Downloads\SGU 2022-2027\Sem1 2025-2026\CNPM\FoodFastDelivery"
-mvn -DskipTests package
-java -jar target\backend-0.0.1-SNAPSHOT.jar --spring.profiles.active=dev
-# API tại http://localhost:8080
-```
-
-Serve frontend tĩnh qua `frontend/server.js` hoặc bất kỳ static server nào:
-
-```powershell
-cd "c:\Users\hmquaan\Downloads\SGU 2022-2027\Sem1 2025-2026\CNPM\FoodFastDelivery\frontend"
-npm run dev:http
-# Mặc định http://localhost:3000 (không proxy). Sử dụng trình duyệt mở các trang .html
-```
-
-### 5) Tài khoản và dữ liệu mẫu
+### 4) Tài khoản và dữ liệu mẫu
 
 - Có thể bật seed trong `application-dev.yaml` (mục `spring.sql.init` → `mode: always`) để nạp dữ liệu demo.
 - Người dùng quản trị/owner có thể cấu hình qua bảng CSDL hoặc endpoint quản trị nếu đã bật.
