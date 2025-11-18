@@ -5,13 +5,15 @@ server:
 
 spring:
   datasource:
-    url: jdbc:mysql://localhost:3306/fast_food_delivery?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC&useLegacyDatetimeCode=false&allowPublicKeyRetrieval=true
+    # Chú ý: Dòng url này rất dài, hãy để nó nằm trên 1 dòng duy nhất, đừng tự xuống dòng
+    url: jdbc:mysql://localhost:3306/fast_food_delivery?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC&useLegacyDatetimeCode=false&allowPublicKeyRetrieval=true&useUnicode=true&characterEncoding=UTF-8
     username: root
     password: quan0931848972
     driver-class-name: com.mysql.cj.jdbc.Driver
   jpa:
     hibernate:
-      ddl-auto: update
+      # Đổi từ 'update' sang 'create' để xóa dữ liệu cũ bị lỗi
+      ddl-auto: create
     show-sql: true
     defer-datasource-initialization: true
     properties:
@@ -19,9 +21,12 @@ spring:
         format_sql: true
   sql:
     init:
-      # Turn OFF automatic execution of data.sql so DB changes persist across restarts.
-      # Switch back to 'always' temporarily if you need to re-run the seed script once.
-      mode: never
+      # DEV: run a specific data.sql from classpath
+      mode: always
+      data-locations:
+        - classpath:data_food_fast.sql
+      # Optional: ensure correct encoding for Vietnamese content
+      encoding: UTF-8
 #  Removed data-locations to prevent seeding on each startup. If you want controlled migrations,
 #  introduce Flyway or Liquibase instead of data.sql.
   # NOTE: If you need initial demo data once, run with SPRING_SQL_INIT_MODE=always for one start, then revert.
@@ -34,6 +39,11 @@ jwt:
   signerKey: "KrNmhbHWRyKlsC8INjwDulyy+A1XoYm2N6KXJ/knkLQiEnE9QS9s7k02m31arvcPfXqTsENoArNgJbrgdQsPyw=="
   valid-duration: 3600 # Ví dụ: thời gian hết hạn (giây), tùy code của bạn có dùng không
   refreshable-duration: 7200 # Ví dụ
+
+# DEV-ONLY: Use plaintext passwords (NoOp encoder). Do NOT enable in production.
+security:
+  password:
+    noop: true
 
 vnpay:
   tmn-code: "HCVE5UQF"
@@ -58,4 +68,4 @@ app:
   payments:
     allow-simulate: true        # enable /api/v1/payments/simulate-success for local drone testing
   demo:
-    enable: false               # demo kickoff disabled; real assignment flow now in place
+    enable: true                # enable demo delivery kickoff endpoints for local testing

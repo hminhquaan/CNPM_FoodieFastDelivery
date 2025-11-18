@@ -28,8 +28,10 @@ public class DeliveryResponse {
     LocalDateTime estimatedArrivalTime;
     ConfirmationMethod confirmationMethod;
     Integer estimatedFlightTimeMinutes;
-    Double distanceKm;
+    Double distanceKm; // populated when available
     LocalDateTime createdAt;
     LocalDateTime updatedAt;
+    Integer batteryUsedPercent;
+    Integer actualFlightTimeSeconds; // actual flight time in seconds (COMPLETED)
 }
 

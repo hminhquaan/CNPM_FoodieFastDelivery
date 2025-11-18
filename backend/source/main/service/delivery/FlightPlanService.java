@@ -1,9 +1,12 @@
 package service.delivery;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import dto.response.FlightPlanPointResponse;
 import entity.Delivery;
 import entity.FlightPlan;
 import entity.FlightPlanPoint;
+import entity.StoreAddress;
 import enums.FlightPlanStatus;
 import exception.AppException;
 import exception.ErrorCode;
@@ -12,15 +15,16 @@ import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import repository.delivery.DeliveryRepository;
 import repository.delivery.FlightPlanPointRepository;
 import repository.delivery.FlightPlanRepository;
-import repository.delivery.DeliveryRepository;
 import repository.store.StoreAddressRepository;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
@@ -33,114 +37,138 @@ public class FlightPlanService {
     DeliveryRepository deliveryRepository;
     StoreAddressRepository storeAddressRepository;
 
-    public List<FlightPlanPointResponse> getFlightPlanPoints(Long deliveryId) {
-        FlightPlan plan = flightPlanRepository.findByDeliveryId(deliveryId)
-                .orElseThrow(() -> new AppException(ErrorCode.DELIVERY_NOT_FOUND));
-        List<FlightPlanPoint> points = flightPlanPointRepository.findByFlightPlanIdOrderBySequenceNoAsc(plan.getId());
-        return points.stream().map(this::toResponse).collect(Collectors.toList());
-    }
+    static final double DEMO_STATION_LAT = 10.760100;
+    static final double DEMO_STATION_LNG = 106.659900;
 
-    @Transactional
+    ObjectMapper mapper = new ObjectMapper();
+
+    /**
+     * Ensure a flight plan for a delivery and return its points.
+     * - If drone is not yet assigned, returns a preview (not persisted): station→store→customer
+     * - If drone is assigned and no plan exists, creates a plan and persists points.
+     * - If a plan exists, returns persisted points.
+     */
+    @Transactional(readOnly = false)
+    @SuppressWarnings("null")
     public List<FlightPlanPointResponse> ensurePlanForDelivery(Long deliveryId) {
-        FlightPlan plan = flightPlanRepository.findByDeliveryId(deliveryId).orElse(null);
-        if (plan == null) {
-            Delivery delivery = deliveryRepository.findById(deliveryId)
-                    .orElseThrow(() -> new AppException(ErrorCode.DELIVERY_NOT_FOUND));
+        Delivery delivery = deliveryRepository.findById(deliveryId)
+                .orElseThrow(() -> new AppException(ErrorCode.DELIVERY_NOT_FOUND));
 
-            // Resolve origin (store) coordinates
-            Double storeLat = null, storeLng = null;
-            try {
-                var addresses = storeAddressRepository.findByStore_Id(delivery.getPickupStoreId());
-                if (!addresses.isEmpty()) {
-                    var addr = addresses.get(0);
-                    storeLat = addr.getLatitude();
-                    storeLng = addr.getLongitude();
-                }
-            } catch (Exception ignored) {}
-            if (storeLat == null || storeLng == null) { storeLat = 10.762622; storeLng = 106.660172; }
+        // Resolve coordinates
+        double[] store = resolveStoreLatLng(delivery.getPickupStoreId())
+                .orElseGet(() -> new double[]{DEMO_STATION_LAT + 0.002, DEMO_STATION_LNG + 0.002});
+        double[] drop = resolveDropoffLatLng(delivery.getDropoffAddressSnapshot())
+                .orElseGet(() -> new double[]{store[0] + 0.004, store[1] + 0.004});
 
-            // Resolve destination (dropoff) coordinates from snapshot JSON
-            Double dropLat = null, dropLng = null;
-            try {
-                String snap = delivery.getDropoffAddressSnapshot();
-                if (snap != null && snap.contains("lat") && snap.contains("lng")) {
-                    int li = snap.indexOf("\"lat\":");
-                    int gi = snap.indexOf("\"lng\":");
-                    if (li >= 0) {
-                        int end = snap.indexOf(',', li);
-                        String val = (end>li? snap.substring(li+6,end): snap.substring(li+6))
-                                .replaceAll("[^0-9.\\-]", " ")
-                                .trim();
-                        dropLat = Double.valueOf(val);
-                    }
-                    if (gi >= 0) {
-                        int end = snap.indexOf('}', gi);
-                        String val = (end>gi? snap.substring(gi+6,end): snap.substring(gi+6))
-                                .replaceAll("[^0-9.\\-]", " ")
-                                .trim();
-                        dropLng = Double.valueOf(val);
-                    }
-                }
-            } catch (Exception ignored) {}
-            if (dropLat == null || dropLng == null) { dropLat = 10.772622; dropLng = 106.670172; }
+        boolean droneAssigned = delivery.getDroneId() != null;
 
-            // If drone is not yet assigned, don't persist plan (drone_id FK not satisfied). Return preview points only.
-            if (delivery.getDroneId() == null) {
-                return generatePathBetweenResponses(storeLat, storeLng, dropLat, dropLng);
-            }
-
-            plan = FlightPlan.builder()
-                    .deliveryId(delivery.getId())
-                    .droneId(delivery.getDroneId())
-                    .plannedDepartureTime(LocalDateTime.now())
-                    .plannedArrivalTime(LocalDateTime.now().plusMinutes(15))
-                    .routeSummary("Auto-generated plan from store to customer")
-                    .status(FlightPlanStatus.PLANNED)
-                    .build();
-            plan = flightPlanRepository.save(plan);
-
-            List<FlightPlanPoint> generated = generatePathBetween(plan.getId(), storeLat, storeLng, dropLat, dropLng);
-            flightPlanPointRepository.saveAll(generated);
+        if (!droneAssigned) {
+            // Preview only, do not persist
+            List<FlightPlanPointResponse> leg1 = generatePathBetweenResponses(DEMO_STATION_LAT, DEMO_STATION_LNG,
+                    store[0], store[1], 10, 100.0, 0);
+            List<FlightPlanPointResponse> leg2 = generatePathBetweenResponses(store[0], store[1],
+                    drop[0], drop[1], 16, 120.0, leg1.size());
+            List<FlightPlanPointResponse> preview = new ArrayList<>();
+            preview.addAll(leg1);
+            preview.addAll(leg2);
+            // Normalize sequence numbers
+            for (int i = 0; i < preview.size(); i++) preview.get(i).setSequenceNo(i + 1);
+            return preview;
         }
-        return getFlightPlanPoints(deliveryId);
+
+        // Drone assigned: return existing plan if exists
+        Optional<FlightPlan> existing = flightPlanRepository.findByDeliveryId(delivery.getId());
+        if (existing.isPresent()) {
+            List<FlightPlanPoint> points = flightPlanPointRepository
+                    .findByFlightPlanIdOrderBySequenceNoAsc(existing.get().getId());
+            return points.stream().map(this::toResponse).collect(Collectors.toList());
+        }
+
+        // Create plan and persist points
+        FlightPlan plan = FlightPlan.builder()
+                .deliveryId(delivery.getId())
+                .droneId(delivery.getDroneId())
+                .plannedDepartureTime(LocalDateTime.now())
+                .plannedArrivalTime(LocalDateTime.now().plusMinutes(20))
+                .routeSummary("Auto-generated plan station→store→customer")
+                .status(FlightPlanStatus.PLANNED)
+                .build();
+        plan = flightPlanRepository.save(plan);
+
+        List<FlightPlanPoint> leg1 = generatePathBetween(plan.getId(), DEMO_STATION_LAT, DEMO_STATION_LNG,
+                store[0], store[1], 10, 100.0, 0);
+        List<FlightPlanPoint> leg2 = generatePathBetween(plan.getId(), store[0], store[1],
+                drop[0], drop[1], 16, 120.0, leg1.size());
+        List<FlightPlanPoint> all = new ArrayList<>();
+        all.addAll(leg1);
+        all.addAll(leg2);
+        flightPlanPointRepository.saveAll(all);
+
+        return all.stream().map(this::toResponse).collect(Collectors.toList());
     }
 
-    private List<FlightPlanPoint> generatePathBetween(Long planId, double sLat, double sLng, double eLat, double eLng) {
-        // Generate a smooth path with slight sinusoidal variation between start and end
-        int steps = 16;
+    private Optional<double[]> resolveStoreLatLng(Long storeId) {
+        if (storeId == null) return Optional.empty();
+        List<StoreAddress> list = storeAddressRepository.findByStore_Id(storeId);
+        if (list == null || list.isEmpty()) return Optional.empty();
+        StoreAddress addr = list.get(0);
+        if (addr.getLatitude() == null || addr.getLongitude() == null) return Optional.empty();
+        return Optional.of(new double[]{addr.getLatitude(), addr.getLongitude()});
+    }
+
+    private Optional<double[]> resolveDropoffLatLng(String dropoffSnapshotJson) {
+        try {
+            if (dropoffSnapshotJson == null || dropoffSnapshotJson.isBlank()) return Optional.empty();
+            JsonNode root = mapper.readTree(dropoffSnapshotJson);
+            if (root.hasNonNull("lat") && root.hasNonNull("lng")) {
+                return Optional.of(new double[]{root.get("lat").asDouble(), root.get("lng").asDouble()});
+            }
+            return Optional.empty();
+        } catch (Exception e) {
+            return Optional.empty();
+        }
+    }
+
+    private List<FlightPlanPoint> generatePathBetween(Long planId,
+                                                       double sLat, double sLng,
+                                                       double eLat, double eLng,
+                                                       int steps, double altitude,
+                                                       int seqOffset) {
         List<FlightPlanPoint> list = new ArrayList<>();
         LocalDateTime base = LocalDateTime.now();
-        for (int i=0;i<=steps;i++) {
-            double t = i/(double)steps;
-            double lat = sLat + (eLat - sLat) * t + Math.sin(t*Math.PI) * 0.0020;
-            double lng = sLng + (eLng - sLng) * t + Math.sin(t*Math.PI) * 0.0020;
+        for (int i = 0; i <= steps; i++) {
+            double t = i / (double) steps;
+            double lat = sLat + (eLat - sLat) * t + Math.sin(t * Math.PI) * 0.0020;
+            double lng = sLng + (eLng - sLng) * t + Math.sin(t * Math.PI) * 0.0020;
             FlightPlanPoint p = FlightPlanPoint.builder()
                     .flightPlanId(planId)
-                    .sequenceNo(i+1)
+                    .sequenceNo(seqOffset + i + 1)
                     .latitude(BigDecimal.valueOf(lat))
                     .longitude(BigDecimal.valueOf(lng))
-                    .altitudeM(BigDecimal.valueOf(120.0))
-                    .etaTime(base.plusSeconds(i*20L))
+                    .altitudeM(BigDecimal.valueOf(altitude))
+                    .etaTime(base.plusSeconds(i * 20L))
                     .build();
             list.add(p);
         }
         return list;
     }
 
-    private List<FlightPlanPointResponse> generatePathBetweenResponses(double sLat, double sLng, double eLat, double eLng) {
-        int steps = 16;
+    private List<FlightPlanPointResponse> generatePathBetweenResponses(double sLat, double sLng,
+                                                                       double eLat, double eLng,
+                                                                       int steps, double altitude,
+                                                                       int seqOffset) {
         List<FlightPlanPointResponse> list = new ArrayList<>();
         LocalDateTime base = LocalDateTime.now();
-        for (int i=0;i<=steps;i++) {
-            double t = i/(double)steps;
-            double lat = sLat + (eLat - sLat) * t + Math.sin(t*Math.PI) * 0.0020;
-            double lng = sLng + (eLng - sLng) * t + Math.sin(t*Math.PI) * 0.0020;
+        for (int i = 0; i <= steps; i++) {
+            double t = i / (double) steps;
+            double lat = sLat + (eLat - sLat) * t + Math.sin(t * Math.PI) * 0.0020;
+            double lng = sLng + (eLng - sLng) * t + Math.sin(t * Math.PI) * 0.0020;
             list.add(FlightPlanPointResponse.builder()
-                    .sequenceNo(i+1)
+                    .sequenceNo(seqOffset + i + 1)
                     .latitude(BigDecimal.valueOf(lat))
                     .longitude(BigDecimal.valueOf(lng))
-                    .altitudeM(BigDecimal.valueOf(120.0))
-                    .etaTime(base.plusSeconds(i*20L))
+                    .altitudeM(BigDecimal.valueOf(altitude))
+                    .etaTime(base.plusSeconds(i * 20L))
                     .build());
         }
         return list;

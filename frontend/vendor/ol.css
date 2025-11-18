@@ -1,0 +1,20 @@
+/* Local copy of OpenLayers 9.1.0 CSS (subset for core controls) */
+:root,
+:host {
+  --ol-background-color: white;
+  --ol-accent-background-color: #F5F5F5;
+  --ol-subtle-background-color: rgba(128, 128, 128, 0.25);
+  --ol-partial-background-color: rgba(255, 255, 255, 0.75);
+  --ol-foreground-color: #333333;
+  --ol-subtle-foreground-color: #666666;
+  --ol-brand-color: #00AAFF;
+}
+.ol-viewport { touch-action: pan-x pan-y; }
+.ol-control { position: absolute; background-color: var(--ol-subtle-background-color); border-radius: 4px; }
+.ol-control button { display:block; margin:1px; padding:0; color: var(--ol-subtle-foreground-color); font-weight:bold; text-decoration:none; font-size:inherit; text-align:center; height:1.375em; width:1.375em; line-height:.4em; background-color: var(--ol-background-color); border:none; border-radius:2px; }
+.ol-zoom { top:.5em; left:.5em; }
+.ol-attribution { text-align:right; bottom:.5em; right:.5em; }
+.ol-attribution ul { margin:0; padding:1px .5em; font-size:12px; list-style:none; }
+.ol-attribution li { display:inline; }
+.ol-attribution li:not(:last-child):after { content:""; }
+/* (Truncated: include full CSS if richer controls required) */

@@ -1,12 +1,37 @@
 // Authentication Manager
 class AuthManager {
     constructor() {
-        this.token = localStorage.getItem('authToken');
-        this.user = JSON.parse(localStorage.getItem('user') || 'null');
+        // Read token/user from unified keys first, then fallback to legacy keys
+        try {
+            const unifiedToken = (typeof STORAGE_KEYS !== 'undefined' && STORAGE_KEYS.TOKEN)
+                ? localStorage.getItem(STORAGE_KEYS.TOKEN)
+                : null;
+            const legacyToken = localStorage.getItem('authToken');
+            this.token = unifiedToken || legacyToken || null;
+
+            let userRaw = null;
+            if (typeof STORAGE_KEYS !== 'undefined' && STORAGE_KEYS.USER) {
+                userRaw = localStorage.getItem(STORAGE_KEYS.USER);
+            }
+            if (!userRaw) userRaw = localStorage.getItem('user');
+            this.user = userRaw ? JSON.parse(userRaw) : null;
+        } catch (_) {
+            this.token = null;
+            this.user = null;
+        }
     }
 
     isAuthenticated() {
-        return !!this.token;
+        // Consider both unified and legacy tokens
+        try {
+            if (this.token) return true;
+            if (typeof STORAGE_KEYS !== 'undefined' && STORAGE_KEYS.TOKEN) {
+                if (localStorage.getItem(STORAGE_KEYS.TOKEN)) return true;
+            }
+            return !!localStorage.getItem('authToken');
+        } catch (_) {
+            return false;
+        }
     }
 
     getUser() {
@@ -84,6 +109,40 @@ class AuthManager {
         const userMenu = document.getElementById('userMenu');
         if (!userMenu) return;
 
+        const guestMenu = document.getElementById('guestMenu');
+        const userDropdown = document.getElementById('userDropdown');
+        const userName = document.getElementById('userName');
+
+        // If page already has standardized nav (guestMenu + userDropdown), just toggle it
+        if (guestMenu && userDropdown) {
+            if (this.isAuthenticated()) {
+                if (guestMenu) guestMenu.style.display = 'none';
+                userDropdown.style.display = 'block';
+                if (userName) userName.textContent = (this.user && (this.user.username || this.user.fullName)) || 'User';
+
+                // Wire dropdown toggle if elements exist
+                const avatarBtn = document.getElementById('userAvatar');
+                const dropdownMenu = document.getElementById('dropdownMenu');
+                if (avatarBtn && dropdownMenu) {
+                    avatarBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        dropdownMenu.classList.toggle('show');
+                    });
+                    document.addEventListener('click', (e) => {
+                        if (!avatarBtn.contains(e.target) && !dropdownMenu.contains(e.target)) {
+                            dropdownMenu.classList.remove('show');
+                        }
+                    });
+                }
+            } else {
+                guestMenu.style.display = 'flex';
+                guestMenu.style.gap = '0.5rem';
+                userDropdown.style.display = 'none';
+            }
+            return;
+        }
+
+        // Fallback: build a simple menu if standardized structure isn't present
         if (this.isAuthenticated()) {
             userMenu.innerHTML = `
                 <div class="user-dropdown" id="userDropdown">
@@ -92,29 +151,23 @@ class AuthManager {
                         <span>${this.user?.username || 'User'}</span>
                     </button>
                     <div class="dropdown-menu" id="dropdownMenu">
-                        <a href="profile.html"><i class="fas fa-user"></i> Tài khoản</a>
                         <a href="orders.html"><i class="fas fa-box"></i> Đơn hàng của tôi</a>
+                        <a href="profile.html"><i class="fas fa-user"></i> Hồ sơ của tôi</a>
                         <a href="#" id="logoutBtn"><i class="fas fa-sign-out-alt"></i> Đăng xuất</a>
                     </div>
                 </div>
             `;
 
-            // Add dropdown toggle
-            const userAvatar = document.getElementById('userAvatar');
-            const dropdownMenu = document.getElementById('dropdownMenu');
-
-            if (userAvatar && dropdownMenu) {
-                userAvatar.addEventListener('click', (e) => {
+            const avatar = document.getElementById('userAvatar');
+            const menu = document.getElementById('dropdownMenu');
+            if (avatar && menu) {
+                avatar.addEventListener('click', (e) => {
                     e.stopPropagation();
-                    dropdownMenu.classList.toggle('active');
+                    menu.classList.toggle('show');
                 });
-
-                document.addEventListener('click', () => {
-                    dropdownMenu.classList.remove('active');
-                });
+                document.addEventListener('click', () => menu.classList.remove('show'));
             }
 
-            // Add logout handler
             const logoutBtn = document.getElementById('logoutBtn');
             if (logoutBtn) {
                 logoutBtn.addEventListener('click', (e) => {
@@ -124,25 +177,14 @@ class AuthManager {
             }
         } else {
             userMenu.innerHTML = `
-                <button class="btn btn-primary" id="loginBtn">Đăng nhập</button>
-                <button class="btn btn-outline" id="signupBtn">Đăng ký</button>
+                <button class="btn btn-outline btn-sm" id="loginBtn">Đăng nhập</button>
+                <button class="btn btn-primary btn-sm" id="signupBtn">Đăng ký</button>
             `;
 
-            // Add modal handlers
             const loginBtn = document.getElementById('loginBtn');
             const signupBtn = document.getElementById('signupBtn');
-
-            if (loginBtn) {
-                loginBtn.addEventListener('click', () => {
-                    showLoginModal();
-                });
-            }
-
-            if (signupBtn) {
-                signupBtn.addEventListener('click', () => {
-                    showSignupModal();
-                });
-            }
+            if (loginBtn) loginBtn.addEventListener('click', () => showLoginModal && showLoginModal());
+            if (signupBtn) signupBtn.addEventListener('click', () => showSignupModal && showSignupModal());
         }
     }
 }

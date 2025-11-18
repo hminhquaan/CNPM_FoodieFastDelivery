@@ -190,6 +190,19 @@ public class DroneController {
                 .build());
     }
 
+        /**
+         * Return drone to station and start charging.
+         */
+        @PostMapping("/{code}/return-to-station")
+        public ResponseEntity<APIResponse<DroneResponse>> returnToStation(@PathVariable String code) {
+                DroneResponse resp = droneService.returnToStationAndCharge(code);
+                return ResponseEntity.ok(APIResponse.<DroneResponse>builder()
+                                .code(200)
+                                .message("Drone returning to station and charging")
+                                .result(resp)
+                                .build());
+        }
+
     /**
      * Check drone health
      */

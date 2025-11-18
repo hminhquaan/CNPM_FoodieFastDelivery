@@ -19,6 +19,7 @@ import entity.Store;
 import enums.DeliveryStatus;
 import enums.DroneStatus;
 import enums.OrderStatus;
+import enums.PaymentStatus;
 import exception.AppException;
 import exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
@@ -55,7 +56,9 @@ public class DeliveryService {
         Order order = orderRepository.findById(request.getOrderId())
                 .orElseThrow(() -> new AppException(ErrorCode.ORDER_NOT_EXISTED));
 
-        if (order.getStatus() != OrderStatus.PAID) {
+        // Chỉ cần thanh toán thành công (PaymentStatus = PAID),
+        // cho phép tạo Delivery ở trạng thái PAID hoặc ACCEPT
+        if (order.getPaymentStatus() != PaymentStatus.PAID) {
             throw new AppException(ErrorCode.ORDER_NOT_PAID);
         }
 
@@ -241,11 +244,12 @@ public class DeliveryService {
     @Transactional
     public DeliveryResponse updateDeliveryStatus(Long deliveryId, UpdateDeliveryStatusRequest request) {
         log.info("Updating delivery {} status to {}", deliveryId, request.getStatus());
-
-        Delivery delivery = deliveryRepository.findById(deliveryId)
+        Long delKey = java.util.Objects.requireNonNull(deliveryId);
+        Delivery delivery = deliveryRepository.findById(delKey)
                 .orElseThrow(() -> new AppException(ErrorCode.DELIVERY_NOT_FOUND));
 
-        Order order = orderRepository.findById(delivery.getOrderId())
+        Long ordKey = java.util.Objects.requireNonNull(delivery.getOrderId());
+        Order order = orderRepository.findById(ordKey)
                 .orElseThrow(() -> new AppException(ErrorCode.ORDER_NOT_EXISTED));
 
         DeliveryStatus oldStatus = delivery.getCurrentStatus();
@@ -274,15 +278,81 @@ public class DeliveryService {
             case COMPLETED:
                 // Giao hàng thành công
                 delivery.setActualArrivalTime(LocalDateTime.now());
+                try { delivery.setConfirmationMethod(enums.ConfirmationMethod.GEOFENCE); } catch (Exception ignore) {}
                 order.setStatus(OrderStatus.DELIVERED);
 
                 // Cập nhật drone về trạng thái AVAILABLE
                 if (delivery.getDroneId() != null) {
-                    Drone drone = droneRepository.findById(delivery.getDroneId())
+                    Long drKey = java.util.Objects.requireNonNull(delivery.getDroneId());
+                    Drone drone = droneRepository.findById(drKey)
                             .orElse(null);
                     if (drone != null) {
+                        // Deduct battery based on flight distance (store -> dropoff)
+                        try {
+                            // Resolve coordinates
+                            Double storeLat = null, storeLng = null;
+                            if (delivery.getPickupStoreId() != null) {
+                                var addrs = storeAddressRepository.findByStore_Id(delivery.getPickupStoreId());
+                                if (!addrs.isEmpty()) {
+                                    var a = addrs.get(0);
+                                    storeLat = a.getLatitude();
+                                    storeLng = a.getLongitude();
+                                }
+                            }
+                            Double customerLat = null, customerLng = null;
+                            // Prefer delivery snapshot then order snapshot
+                            String snap = delivery.getDropoffAddressSnapshot();
+                            if (snap == null || snap.isBlank()) {
+                                try { snap = order.getDeliveryAddressSnapshot(); } catch (Exception __) {}
+                            }
+                            if (snap != null && snap.trim().startsWith("{")) {
+                                try {
+                                    com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                                    java.util.Map<String, Object> map = mapper.readValue(snap, new com.fasterxml.jackson.core.type.TypeReference<java.util.Map<String, Object>>() {});
+                                    Object latObj = map.get("lat");
+                                    Object lngObj = map.get("lng");
+                                    if (latObj == null) latObj = map.get("latitude");
+                                    if (lngObj == null) lngObj = map.get("longitude");
+                                    if (latObj instanceof Number) customerLat = ((Number) latObj).doubleValue();
+                                    else if (latObj instanceof String) customerLat = Double.parseDouble(((String) latObj).trim());
+                                    if (lngObj instanceof Number) customerLng = ((Number) lngObj).doubleValue();
+                                    else if (lngObj instanceof String) customerLng = Double.parseDouble(((String) lngObj).trim());
+                                } catch (Exception jex) {
+                                    try {
+                                        java.util.regex.Matcher mLat = java.util.regex.Pattern.compile("\"(lat|latitude)\"\\s*:\\s*([-0-9.]+)").matcher(snap);
+                                        if (mLat.find()) customerLat = Double.parseDouble(mLat.group(2));
+                                        java.util.regex.Matcher mLng = java.util.regex.Pattern.compile("\"(lng|longitude)\"\\s*:\\s*([-0-9.]+)").matcher(snap);
+                                        if (mLng.find()) customerLng = Double.parseDouble(mLng.group(2));
+                                    } catch (Exception rex) { /* ignore */ }
+                                }
+                            }
+                            if (storeLat == null || storeLng == null) { storeLat = 10.762622; storeLng = 106.660172; }
+                            if (customerLat == null || customerLng == null) { customerLat = 10.764200; customerLng = 106.662300; }
+
+                            double distanceKm = droneService.calculateFlightDistance(storeLat, storeLng, customerLat, customerLng);
+                            int usage = droneService.estimateBatteryUsageForDistance(distanceKm);
+                            try { delivery.setDistanceKm(java.math.BigDecimal.valueOf(distanceKm)); } catch (Exception __) {}
+                            Integer cur = drone.getCurrentBatteryPercent();
+                            if (cur == null) cur = 100;
+                            int newLvl = Math.max(0, cur - usage);
+                            try { delivery.setBatteryUsedPercent(usage); } catch (Exception ignore) {}
+                            drone.setCurrentBatteryPercent(newLvl);
+                            // Update last known position to dropoff
+                            try {
+                                drone.setLastLatitude(java.math.BigDecimal.valueOf(customerLat));
+                                drone.setLastLongitude(java.math.BigDecimal.valueOf(customerLng));
+                            } catch (Exception __) {}
+                            drone.setLastTelemetryAt(LocalDateTime.now());
+                            try {
+                                order.setDeliveredDroneId(drone.getId());
+                                order.setDeliveredDroneCode(drone.getCode());
+                            } catch (Exception __) {}
+                        } catch (Exception ex) {
+                            log.warn("Battery deduction failed for delivery {}: {}", delivery.getId(), ex.getMessage());
+                        }
                         drone.setStatus(DroneStatus.AVAILABLE);
                         droneRepository.save(drone);
+                        try { orderRepository.save(order); } catch (Exception __) {}
                     }
                 }
                 break;
@@ -294,7 +364,8 @@ public class DeliveryService {
 
                 // Cập nhật drone về trạng thái AVAILABLE
                 if (delivery.getDroneId() != null) {
-                    Drone drone = droneRepository.findById(delivery.getDroneId())
+                    Long drKey = java.util.Objects.requireNonNull(delivery.getDroneId());
+                    Drone drone = droneRepository.findById(drKey)
                             .orElse(null);
                     if (drone != null) {
                         drone.setStatus(DroneStatus.AVAILABLE);
@@ -309,7 +380,8 @@ public class DeliveryService {
                 // Keep current order status to allow retry/re-schedule or manual handling.
 
                 if (delivery.getDroneId() != null) {
-                    Drone drone = droneRepository.findById(delivery.getDroneId())
+                    Long drKey = java.util.Objects.requireNonNull(delivery.getDroneId());
+                    Drone drone = droneRepository.findById(drKey)
                             .orElse(null);
                     if (drone != null) {
                         drone.setStatus(DroneStatus.AVAILABLE);
@@ -317,9 +389,13 @@ public class DeliveryService {
                     }
                 }
                 break;
+
+                default:
+                // For other statuses (QUEUED, ASSIGNED) no side-effects here
+                break;
         }
 
-        orderRepository.save(order);
+            order = java.util.Objects.requireNonNull(orderRepository.save(order));
         delivery = deliveryRepository.save(delivery);
 
         log.info("Delivery {} status updated from {} to {}", deliveryId, oldStatus, newStatus);
@@ -328,10 +404,114 @@ public class DeliveryService {
     }
 
     /**
+     * Force-complete a delivery ignoring normal transition validation.
+     * Dev-profile helper to keep backend state in sync with simulations.
+     */
+    @Transactional
+    public DeliveryResponse forceComplete(Long deliveryId) {
+        log.warn("[DEV] Force-completing delivery: {}", deliveryId);
+
+        Long delKey = java.util.Objects.requireNonNull(deliveryId);
+        Delivery delivery = deliveryRepository.findById(delKey)
+                .orElseThrow(() -> new AppException(ErrorCode.DELIVERY_NOT_FOUND));
+
+        Long ordKey = java.util.Objects.requireNonNull(delivery.getOrderId());
+        Order order = orderRepository.findById(ordKey)
+                .orElseThrow(() -> new AppException(ErrorCode.ORDER_NOT_EXISTED));
+
+        // Set to COMPLETED directly and apply same side-effects as normal path
+        delivery.setCurrentStatus(DeliveryStatus.COMPLETED);
+        delivery.setActualArrivalTime(LocalDateTime.now());
+        try { delivery.setConfirmationMethod(enums.ConfirmationMethod.GEOFENCE); } catch (Exception ignore) {}
+        delivery.setUpdatedAt(LocalDateTime.now());
+
+        // Update order
+        order.setStatus(OrderStatus.DELIVERED);
+
+        // Battery deduction + telemetry update similar to updateDeliveryStatus(COMPLETED)
+        if (delivery.getDroneId() != null) {
+            Long drKey = java.util.Objects.requireNonNull(delivery.getDroneId());
+            Drone drone = droneRepository.findById(drKey).orElse(null);
+            if (drone != null) {
+                try {
+                    // Resolve coordinates
+                    Double storeLat = null, storeLng = null;
+                    if (delivery.getPickupStoreId() != null) {
+                        var addrs = storeAddressRepository.findByStore_Id(delivery.getPickupStoreId());
+                        if (!addrs.isEmpty()) {
+                            var a = addrs.get(0);
+                            storeLat = a.getLatitude();
+                            storeLng = a.getLongitude();
+                        }
+                    }
+                    Double customerLat = null, customerLng = null;
+                    String snap = delivery.getDropoffAddressSnapshot();
+                    if (snap == null || snap.isBlank()) {
+                        try { snap = order.getDeliveryAddressSnapshot(); } catch (Exception __) {}
+                    }
+                    if (snap != null && snap.trim().startsWith("{")) {
+                        try {
+                            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                            java.util.Map<String, Object> map = mapper.readValue(snap, new com.fasterxml.jackson.core.type.TypeReference<java.util.Map<String, Object>>() {});
+                            Object latObj = map.get("lat");
+                            Object lngObj = map.get("lng");
+                            if (latObj == null) latObj = map.get("latitude");
+                            if (lngObj == null) lngObj = map.get("longitude");
+                            if (latObj instanceof Number) customerLat = ((Number) latObj).doubleValue();
+                            else if (latObj instanceof String) customerLat = Double.parseDouble(((String) latObj).trim());
+                            if (lngObj instanceof Number) customerLng = ((Number) lngObj).doubleValue();
+                            else if (lngObj instanceof String) customerLng = Double.parseDouble(((String) lngObj).trim());
+                        } catch (Exception jex) {
+                            try {
+                                java.util.regex.Matcher mLat = java.util.regex.Pattern.compile("\"(lat|latitude)\"\\s*:\\s*([-0-9.]+)").matcher(snap);
+                                if (mLat.find()) customerLat = Double.parseDouble(mLat.group(2));
+                                java.util.regex.Matcher mLng = java.util.regex.Pattern.compile("\"(lng|longitude)\"\\s*:\\s*([-0-9.]+)").matcher(snap);
+                                if (mLng.find()) customerLng = Double.parseDouble(mLng.group(2));
+                            } catch (Exception rex) { /* ignore */ }
+                        }
+                    }
+                    if (storeLat == null || storeLng == null) { storeLat = 10.762622; storeLng = 106.660172; }
+                    if (customerLat == null || customerLng == null) { customerLat = 10.764200; customerLng = 106.662300; }
+
+                    double distanceKm = droneService.calculateFlightDistance(storeLat, storeLng, customerLat, customerLng);
+                    int usage = droneService.estimateBatteryUsageForDistance(distanceKm);
+                    try { delivery.setDistanceKm(java.math.BigDecimal.valueOf(distanceKm)); } catch (Exception __) {}
+                    Integer cur = drone.getCurrentBatteryPercent();
+                    if (cur == null) cur = 100;
+                    int newLvl = Math.max(0, cur - usage);
+                    try { delivery.setBatteryUsedPercent(usage); } catch (Exception ignore2) {}
+                    drone.setCurrentBatteryPercent(newLvl);
+                    // Update last known position to dropoff
+                    try {
+                        drone.setLastLatitude(java.math.BigDecimal.valueOf(customerLat));
+                        drone.setLastLongitude(java.math.BigDecimal.valueOf(customerLng));
+                    } catch (Exception __) {}
+                    drone.setLastTelemetryAt(LocalDateTime.now());
+                    // Stamp order with delivered drone
+                    try {
+                        order.setDeliveredDroneId(drone.getId());
+                        order.setDeliveredDroneCode(drone.getCode());
+                    } catch (Exception __) {}
+                } catch (Exception ex) {
+                    log.warn("[DEV] Battery deduction failed (forceComplete) for delivery {}: {}", delivery.getId(), ex.getMessage());
+                }
+                drone.setStatus(DroneStatus.AVAILABLE);
+                droneRepository.save(drone);
+            }
+        }
+
+        try { orderRepository.save(order); } catch (Exception __) {}
+        delivery = deliveryRepository.save(delivery);
+
+        return toDeliveryResponse(delivery);
+    }
+
+    /**
      * Lấy thông tin delivery theo order ID
      */
     public DeliveryResponse getDeliveryByOrderId(Long orderId) {
-        Delivery delivery = deliveryRepository.findByOrderId(orderId)
+        Long ordKey = java.util.Objects.requireNonNull(orderId);
+        Delivery delivery = deliveryRepository.findByOrderId(ordKey)
                 .orElseThrow(() -> new AppException(ErrorCode.DELIVERY_NOT_FOUND));
 
         return toDeliveryResponse(delivery);
@@ -341,7 +521,8 @@ public class DeliveryService {
      * Lấy thông tin delivery theo ID
      */
     public DeliveryResponse getDeliveryById(Long deliveryId) {
-        Delivery delivery = deliveryRepository.findById(deliveryId)
+        Long delKey2 = java.util.Objects.requireNonNull(deliveryId);
+        Delivery delivery = deliveryRepository.findById(delKey2)
                 .orElseThrow(() -> new AppException(ErrorCode.DELIVERY_NOT_FOUND));
 
         return toDeliveryResponse(delivery);
@@ -398,7 +579,20 @@ public class DeliveryService {
                 .actualArrivalTime(delivery.getActualArrivalTime())
                 .confirmationMethod(delivery.getConfirmationMethod())
                 .createdAt(delivery.getCreatedAt())
-                .updatedAt(delivery.getUpdatedAt());
+            .updatedAt(delivery.getUpdatedAt())
+            .batteryUsedPercent(delivery.getBatteryUsedPercent());
+
+        // Actual distance
+        if (delivery.getDistanceKm() != null) {
+            builder.distanceKm(delivery.getDistanceKm().doubleValue());
+        }
+
+        // Actual flight time seconds
+        if (delivery.getActualDepartureTime() != null && delivery.getActualArrivalTime() != null) {
+            long seconds = java.time.Duration.between(delivery.getActualDepartureTime(), delivery.getActualArrivalTime()).getSeconds();
+            if (seconds < 0) seconds = 0;
+            builder.actualFlightTimeSeconds((int)Math.min(Integer.MAX_VALUE, seconds));
+        }
 
         // Add order code if order exists
         if (delivery.getOrder() != null) {

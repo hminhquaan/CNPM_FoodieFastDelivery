@@ -3,7 +3,9 @@
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', () => {
     initializePage();
-    loadFeaturedStores();
+    if (document.getElementById('featuredStores')) {
+        loadFeaturedStores();
+    }
     updateCartBadge();
     checkAuthStatus();
 });
@@ -59,12 +61,15 @@ function checkAuthStatus() {
     const isLoggedIn = AuthHelper.isLoggedIn();
     const guestMenu = document.getElementById('guestMenu');
     const userDropdown = document.getElementById('userDropdown');
+    const userName = document.getElementById('userName');
+
+    if (!guestMenu || !userDropdown) return; // navbar not present on this page
 
     if (isLoggedIn) {
-        const user = AuthHelper.getUser();
+        const user = AuthHelper.getUser() || {};
         guestMenu.style.display = 'none';
         userDropdown.style.display = 'block';
-        document.getElementById('userName').textContent = user.username || user.fullName || 'User';
+        if (userName) userName.textContent = user.username || user.fullName || 'User';
     } else {
         guestMenu.style.display = 'flex';
         guestMenu.style.gap = '0.5rem';
@@ -174,23 +179,33 @@ async function handleLogin(e) {
     try {
         Loading.show();
 
-        const response = await APIHelper.post(API_CONFIG.ENDPOINTS.LOGIN, data);
+        const response = await APIHelper.postNoAuth(API_CONFIG.ENDPOINTS.LOGIN, data);
 
-        if (response.result && response.result.token) {
-            // Save auth data
-            AuthHelper.login(response.result.token, {
+        // Hỗ trợ nhiều cấu trúc response khác nhau từ backend
+        const token =
+            response?.result?.token ||
+            response?.result?.accessToken ||
+            response?.token ||
+            response?.accessToken;
+
+        if (token) {
+            const userPayload = {
                 username: data.username,
-                ...response.result
-            });
+                ...(response.result || response)
+            };
+
+            // Lưu token + user để các trang khác dùng
+            AuthHelper.login(token, userPayload);
 
             Toast.success('Đăng nhập thành công!');
             closeModal('loginModal');
             checkAuthStatus();
 
-            // Reload cart if needed
+            // Reload cart nếu cần
             updateCartBadge();
         } else {
-            Toast.error('Đăng nhập thất bại!');
+            const msg = (response && (response.message || response.error || response.detail)) || 'Đăng nhập thất bại!';
+            Toast.error(msg);
         }
     } catch (error) {
         console.error('Login error:', error);
@@ -216,14 +231,15 @@ async function handleRegister(e) {
     try {
         Loading.show();
 
-        const response = await APIHelper.post(API_CONFIG.ENDPOINTS.REGISTER, data);
+        const response = await APIHelper.postNoAuth(API_CONFIG.ENDPOINTS.REGISTER, data);
 
-        if (response.code === 200) {
+        if (response && response.code === 200) {
             Toast.success('Đăng ký thành công! Vui lòng đăng nhập.');
             closeModal('registerModal');
             showLoginModal();
         } else {
-            Toast.error(response.message || 'Đăng ký thất bại!');
+            const msg = (response && (response.message || response.error || response.detail)) || 'Đăng ký thất bại!';
+            Toast.error(msg);
         }
     } catch (error) {
         console.error('Register error:', error);
@@ -235,15 +251,18 @@ async function handleRegister(e) {
 
 // Update cart badge
 async function updateCartBadge() {
+    const badge = document.getElementById('cartBadge');
+    if (!badge) return;
+
     if (!AuthHelper.isLoggedIn()) {
-        document.getElementById('cartBadge').textContent = '0';
+        badge.textContent = '0';
         return;
     }
 
     try {
         const response = await APIHelper.get(API_CONFIG.ENDPOINTS.CART_COUNT);
         const count = response || 0;
-        document.getElementById('cartBadge').textContent = count;
+        badge.textContent = count;
     } catch (error) {
         console.error('Error updating cart badge:', error);
     }

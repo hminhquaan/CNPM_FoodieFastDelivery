@@ -1,6 +1,21 @@
 // API Configuration
 const API_CONFIG = {
-    BASE_URL: 'http://localhost:8080',
+    // Dynamic base URL:
+    // - When running via frontend dev server (localhost:3000), use '' so requests go through the proxy (/api and /auth are proxied)
+    // - Otherwise, default to current origin (works when frontend served by backend),
+    //   and fallback to http://localhost:8080 if origin is unavailable
+    BASE_URL: (() => {
+        try {
+            const origin = window.location.origin || '';
+            if (/localhost:300\d|127\.0\.0\.1:300\d/.test(origin)) {
+                return '';
+            }
+            if (origin && origin.startsWith('http')) {
+                return origin;
+            }
+        } catch (_) { /* ignore */ }
+        return 'http://localhost:8080';
+    })(),
     ENDPOINTS: {
         // Authentication
         LOGIN: '/auth/login',
@@ -34,10 +49,21 @@ const API_CONFIG = {
         ORDERS: '/api/v1/orders',
     ORDER_BY_ID: (id) => `/api/v1/orders/${id}`,
         ORDER_BY_CODE: (code) => `/api/v1/orders/code/${code}`,
+        ORDERS_BY_STORE: (storeId) => `/api/v1/orders/store/${storeId}`,
         USER_ORDERS: (userId) => `/api/v1/orders/user/${userId}`,
+        KITCHEN_QUEUE: (storeId, status) => `/api/v1/orders/store/${storeId}/kitchen-queue${status ? `?status=${status}` : ''}`,
+        ORDER_ACCEPT: (orderId) => `/api/v1/orders/${orderId}/accept`,
+        ORDER_REJECT: (orderId, reason) => `/api/v1/orders/${orderId}/reject${reason ? `?reason=${encodeURIComponent(reason)}` : ''}`,
+        ORDER_KITCHEN_COMPLETE: (orderId) => `/api/v1/orders/${orderId}/kitchen-complete`,
 
         // Users (admin)
         USERS: '/users/getAllUser',
+        USER_BY_ID: (id) => `/api/v1/users/${id}`,
+        USER_UPDATE: (id) => `/api/v1/users/${id}`,
+        USER_ADDRESSES: (userId) => `/api/v1/users/${userId}/addresses`,
+        USER_ADDRESS_UPDATE: (userId, addressId) => `/api/v1/users/${userId}/addresses/${addressId}`,
+        USER_ADDRESS_DELETE: (userId, addressId) => `/api/v1/users/${userId}/addresses/${addressId}`,
+        USER_ADDRESS_SET_DEFAULT: (userId, addressId) => `/api/v1/users/${userId}/addresses/${addressId}/set-default`,
 
         // Payment
         PAYMENT_INIT: '/api/v1/payments/init',
@@ -64,7 +90,14 @@ const STORAGE_KEYS = {
 const APIHelper = {
     // Get auth headers
     getAuthHeaders() {
-        const token = localStorage.getItem(STORAGE_KEYS.TOKEN);
+        let token = null;
+        try {
+            token = localStorage.getItem(STORAGE_KEYS.TOKEN);
+            if (!token) {
+                // Fallback to legacy key if present
+                token = localStorage.getItem('authToken');
+            }
+        } catch (_) { /* ignore */ }
         return {
             'Content-Type': 'application/json',
             ...(token && { 'Authorization': `Bearer ${token}` })
@@ -74,10 +107,13 @@ const APIHelper = {
     // Make API request
     async request(endpoint, options = {}) {
         const url = `${API_CONFIG.BASE_URL}${endpoint}`;
+        const baseHeaders = (options.auth === false)
+            ? { 'Content-Type': 'application/json' }
+            : this.getAuthHeaders();
         const config = {
             ...options,
             headers: {
-                ...this.getAuthHeaders(),
+                ...baseHeaders,
                 ...options.headers
             }
         };
@@ -91,8 +127,40 @@ const APIHelper = {
             };
 
             if (!response.ok) {
+                // Fallback: when running on a non-proxy server (like http-server), retry to backend directly
+                const onDevPort = (() => { try { return /localhost:300\d|127\.0\.0\.1:300\d/.test(window.location.origin || ''); } catch { return false; } })();
+                const canFallback = API_CONFIG.BASE_URL === '' && onDevPort && !options.__retried && (endpoint.startsWith('/auth') || endpoint.startsWith('/api') || endpoint.startsWith('/products') || endpoint.startsWith('/categories') || endpoint.startsWith('/users') || endpoint.startsWith('/drones'));
+                if (response.status === 404 && canFallback) {
+                    const altUrl = `http://localhost:8080${endpoint}`;
+                    const retryConfig = {
+                        ...options,
+                        __retried: true,
+                        headers: {
+                            ...((options.auth === false) ? { 'Content-Type': 'application/json' } : this.getAuthHeaders()),
+                            ...options.headers
+                        }
+                    };
+                    const retryResp = await fetch(altUrl, retryConfig);
+                    const retryData = await (async () => { try { return await retryResp.json(); } catch { return null; } })();
+                    if (!retryResp.ok) {
+                        let message = (retryData && (retryData.message || retryData.error || retryData.detail)) || retryResp.statusText || 'Request failed';
+                        const err = new Error(message);
+                        err.status = retryResp.status;
+                        err.url = altUrl;
+                        throw err;
+                    }
+                    return retryData;
+                }
                 const data = await parseJsonSafe();
                 let message = (data && (data.message || data.error || data.detail)) || response.statusText || 'Request failed';
+                if (response.status === 401) {
+                    message = 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.';
+                    // Force logout only on authentication expiration
+                    try { AuthHelper.logout(); } catch (_) { /* ignore */ }
+                } else if (response.status === 403) {
+                    // Do not logout on forbidden; let caller handle UX (e.g., warn + revert)
+                    message = 'Không đủ quyền truy cập cho thao tác này.';
+                }
                 // Fallback to text if not JSON
                 if (!data) {
                     try { message = await response.text(); } catch { /* ignore */ }
@@ -124,6 +192,15 @@ const APIHelper = {
         });
     },
 
+    // POST request without auth header (e.g., login/signup)
+    async postNoAuth(endpoint, data) {
+        return this.request(endpoint, {
+            method: 'POST',
+            body: JSON.stringify(data),
+            auth: false
+        });
+    },
+
     // PUT request
     async put(endpoint, data) {
         return this.request(endpoint, {
@@ -141,11 +218,18 @@ const APIHelper = {
 // Auth Helper
 const AuthHelper = {
     isLoggedIn() {
-        return !!localStorage.getItem(STORAGE_KEYS.TOKEN);
+        try {
+            return !!(localStorage.getItem(STORAGE_KEYS.TOKEN) || localStorage.getItem('authToken'));
+        } catch (_) {
+            return false;
+        }
     },
 
     getUser() {
-        const user = localStorage.getItem(STORAGE_KEYS.USER);
+        let user = null;
+        try {
+            user = localStorage.getItem(STORAGE_KEYS.USER) || localStorage.getItem('user');
+        } catch (_) { /* ignore */ }
         return user ? JSON.parse(user) : null;
     },
 

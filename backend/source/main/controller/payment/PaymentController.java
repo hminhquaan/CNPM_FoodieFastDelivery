@@ -227,6 +227,21 @@ public class PaymentController {
         }
 
         String html;
+        String trackingUrl = null;
+        // Try to resolve orderId for redirect to tracking
+        try {
+            String orderCode = extractOrderCode(params);
+            if (orderCode != null) {
+                orderRepository.findByOrderCode(orderCode).ifPresent(o -> {
+                    // Build frontend tracking url
+                    // tracking page expects orderId query param
+                    // e.g. http://localhost:3000/tracking.html?orderId=2001
+                    // fall back to orders list if not found
+                });
+            }
+        } catch (Exception e) {
+            log.warn("Could not resolve orderId for tracking redirect: {}", e.getMessage());
+        }
         if ("00".equals(vnp_ResponseCode) && "00".equals(vnp_TransactionStatus)) {
             // ✅ CẬP NHẬT DATABASE khi thanh toán thành công
             try {
@@ -242,8 +257,21 @@ public class PaymentController {
                 log.error("Error processing payment in return URL: {}", e.getMessage(), e);
             }
 
+            // Try get order id for tracking
+            try {
+                String orderCode = extractOrderCode(params);
+                if (orderCode != null) {
+                    Order order = orderRepository.findByOrderCode(orderCode).orElse(null);
+                    if (order != null) {
+                        trackingUrl = frontendBaseUrl + "/tracking.html?orderId=" + order.getId();
+                    }
+                }
+            } catch (Exception ex) {
+                log.warn("Cannot derive tracking redirect: {}", ex.getMessage());
+            }
+
             html = buildSuccessHtml(vnp_TxnRef, params.get("vnp_Amount"),
-                    params.get("vnp_TransactionNo"), params.get("vnp_PayDate"), params.get("vnp_OrderInfo"));
+                    params.get("vnp_TransactionNo"), params.get("vnp_PayDate"), params.get("vnp_OrderInfo"), trackingUrl);
         } else {
             // ✅ CẬP NHẬT DATABASE khi thanh toán thất bại
             try {
@@ -277,10 +305,11 @@ public class PaymentController {
                 actionButtons() + "</div></div></body></html>";
     }
 
-    private String buildSuccessHtml(String orderCode, String amount, String transactionNo, String payDate, String orderInfo) {
+    private String buildSuccessHtml(String orderCode, String amount, String transactionNo, String payDate, String orderInfo, String trackingUrl) {
         String formattedAmount = formatAmount(amount);
         String formattedDate = formatDate(payDate);
-    return "<!DOCTYPE html><html lang='vi'><head><meta charset='UTF-8'><title>Thanh toán thành công</title>" + commonHead() + "</head>" +
+        String autoRedirect = trackingUrl != null ? ("<meta http-equiv='refresh' content='3;url=" + trackingUrl + "'>") : "";
+    return "<!DOCTYPE html><html lang='vi'><head><meta charset='UTF-8'><title>Thanh toán thành công</title>" + commonHead() + autoRedirect + "</head>" +
         "<body class='pay-result'><div class='pay-wrapper'><div class='pay-card success'><h1>Thanh toán thành công</h1>" +
                 "<ul class='details'>" +
                 li("Mã đơn hàng", orderCode) +
@@ -288,9 +317,27 @@ public class PaymentController {
                 li("Mã giao dịch", transactionNo) +
                 li("Thời gian", formattedDate) +
                 "</ul>" +
-        "<div class='actions'><a class='btn btn-primary' href='" + frontendBaseUrl + "/orders.html'>Xem đơn hàng</a>" +
+        "<div class='actions'>" +
+        (trackingUrl != null ? ("<a class='btn btn-primary' href='" + trackingUrl + "'>Theo dõi đơn hàng</a>") : ("<a class='btn btn-primary' href='" + frontendBaseUrl + "/orders.html'>Xem đơn hàng</a>")) +
         "<a class='btn btn-outline' href='" + frontendBaseUrl + "/index.html'>Trang chủ</a></div>" +
         "</div></div></body></html>";
+    }
+
+    private String extractOrderCode(Map<String, String> params) {
+        String vnpOrderInfo = params.get("vnp_OrderInfo");
+        String vnpTxnRef = params.get("vnp_TxnRef");
+        // Prefer parsing from vnp_TxnRef: pattern ORDERCODE_timestamp
+        if (vnpTxnRef != null && vnpTxnRef.contains("_")) {
+            return vnpTxnRef.substring(0, vnpTxnRef.indexOf('_'));
+        }
+        // Fallback: extract token starting with ORD from OrderInfo
+        if (vnpOrderInfo != null) {
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("(ORD[0-9A-Za-z]+)").matcher(vnpOrderInfo);
+            if (m.find()) {
+                return m.group(1);
+            }
+        }
+        return null;
     }
 
     private String buildFailureHtml(String orderCode, String responseCode, String orderInfo) {

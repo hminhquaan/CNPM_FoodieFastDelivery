@@ -1,89 +1,160 @@
 # Thiết kế Backend (FoodFast Delivery)
 
-Tài liệu tóm tắt kiến trúc, các quyết định thiết kế, ERD, và các sơ đồ cấu phần chính của hệ thống.
+Tài liệu đặc tả kiến trúc, dữ liệu, bảo mật và các quy tắc nghiệp vụ của backend Spring Boot.
 
-## 1. Tổng quan kiến trúc
+---
 
-- Kiến trúc 3 lớp: Controller → Service → Repository
-- Spring Boot 3, Spring Data JPA (Hibernate), Lombok, MapStruct
-- Bảo mật: JWT Bearer (Spring Security)
-- Thanh toán: VNPay (sandbox) với chữ ký HMAC, xử lý return & IPN
-- Giao vận: Tự động tạo Delivery sau thanh toán, gán Drone theo tải trọng, pin và khoảng cách, cập nhật trạng thái tự động
-- Hồ sơ chạy: dev (H2, seed demo), prod-like (MySQL)
+## 1) Tổng quan kiến trúc
 
-## 2. Các module chính
+- Mô hình 3 lớp: Controller → Service → Repository.
+- Nền tảng: Spring Boot 3.5, Spring Data JPA (Hibernate), Lombok, MapStruct.
+- Bảo mật: Spring Security + JWT Bearer.
+- CSDL: MySQL 8.0 (dev dùng MySQL, không dùng H2).
+- Triển khai: Maven build JAR; profile chạy chính là `dev` (port 8080).
+- Frontend dev: server Express (port 3000) reverse proxy về backend (8080).
 
-- Auth: đăng ký/đăng nhập, refresh token, xác thực
-- User: thông tin người dùng, địa chỉ nhận hàng (tọa độ)
-- Store: cửa hàng, địa chỉ cửa hàng (tọa độ), sổ cái
-- Product: danh mục, sản phẩm, tồn kho đơn giản
-- Cart: giỏ hàng của người dùng, item theo sản phẩm và cửa hàng
-- Order: tạo đơn theo từng cửa hàng từ giỏ; snapshot địa chỉ nhận (JSON có lat/lng)
-- Payment (VNPay): khởi tạo thanh toán, xác thực return & IPN, trạng thái giao dịch
-- Delivery: tạo record sau thanh toán thành công, tiến trình vận chuyển
-- Drone: quản lý drone (đăng ký, cập nhật vị trí/trạng thái), chọn drone phù hợp
-- Seed/Demo: seed dữ liệu mẫu; mô phỏng thanh toán (dev)
+Thư mục code chính: `backend/source/main` (Java) và `backend/source/resources` (cấu hình).
 
-Xem sơ đồ Component: `Docucment_PRD/plantuml/component_vi.puml`.
+### Liên kết sơ đồ chi tiết
+- Use Case: `plantuml/usecase_chi_tiet.puml`
+- Activity (Đặt hàng & thanh toán): `plantuml/activity_dat_hang_thanh_toan_chi_tiet.puml`
+- Activity (Giao hàng & sạc drone): `plantuml/activity_drone_giao_hang_sac_chi_tiet.puml`
+- Sequence (Đặt hàng → giao hoàn tất): `plantuml/sequence_dat_hang_giao_hang_chi_tiet.puml`
+- Sequence (Drone sạc pin): `plantuml/sequence_drone_sac_pin_chi_tiet.puml`
+- Component chi tiết: `plantuml/component_kien_truc_chi_tiet.puml`
+- Deployment chi tiết: `plantuml/deployment_kien_truc_chi_tiet.puml`
+- ERD cập nhật: `plantuml/erd_cap_nhat.puml`
 
-## 3. Dòng dữ liệu/chức năng
+---
 
-1) Khách duyệt cửa hàng/sản phẩm, thêm vào giỏ
-2) Gửi yêu cầu tạo đơn → backend tách theo cửa hàng, lưu Order + OrderItem
-3) Khởi tạo thanh toán VNPay → redirect khách đến VNPay
-4) VNPay return (hiển thị) và IPN (quyết định) → backend đánh dấu thanh toán thành công
-5) Tự động tạo Delivery → chọn Drone → tiến trình LAUNCHED/ARRIVING/COMPLETED
-6) Frontend polling theo dõi Delivery đến khi hoàn tất
+## 2) Module & lớp chịu trách nhiệm
 
-Xem Activity: `Docucment_PRD/plantuml/activity_checkout_delivery_vi.puml` và Sequence tổng: `Docucment_PRD/plantuml/sequence_end_to_end_vi.puml`.
+- Auth: đăng nhập/đăng ký, validate token (JWT), phân quyền (CUSTOMER, ADMIN, STORE_OWNER).
+- User: hồ sơ người dùng, địa chỉ giao hàng (kinh độ/vĩ độ).
+- Store: cửa hàng, địa chỉ cửa hàng, menu.
+- Product: danh mục, sản phẩm, tồn kho cơ bản.
+- Cart/Order: giỏ hàng, tạo đơn, snapshot địa chỉ giao hàng vào `deliveryAddressSnapshot` (JSON lat/lng).
+- Payment: tích hợp VNPay (sandbox), có endpoint mô phỏng thành công trong dev.
+- Delivery: vòng đời giao hàng; liên kết với Order và Drone.
+- Drone: thông tin drone, vị trí gần nhất, pin, trạng thái, trạm sạc.
 
-## 4. ERD (mối quan hệ dữ liệu)
+Xem các sơ đồ ở `Docucment_PRD/plantuml/*.puml` (component, activity, sequence, deployment, erd).
 
-Các thực thể chính: User, Roles, UserAddress, Store, StoreAddress, ProductCategory, Product, Cart, CartItem, Order, OrderItem, PaymentTransaction, Delivery, Drone, FlightPlan, FlightPlanPoint, StoreLedger, PayoutBatch.
+---
+
+## 3) Dòng nghiệp vụ (happy path)
+
+1. Khách chọn món → tạo Order → chuyển trang thanh toán (VNPay hoặc mô phỏng).
+2. Thanh toán thành công → tạo Delivery cho order; gán Drone phù hợp.
+3. Delivery chuyển trạng thái qua các bước đến `COMPLETED`.
+4. Frontend tracking dùng polling các API để cập nhật tiến trình & hiển thị bản đồ.
+
+Sơ đồ tham khảo: `activity_checkout_delivery_vi.puml`, `sequence_end_to_end_vi.puml`.
+
+---
+
+## 4) Mô hình dữ liệu (ERD rút gọn)
+
+Thực thể chính: `User`, `Role`, `UserAddress`, `Store`, `StoreAddress`, `ProductCategory`, `Product`, `Cart`, `CartItem`, `Order`, `OrderItem`, `PaymentTransaction`, `Delivery`, `Drone`.
+
+Các điểm đáng chú ý đã triển khai trong code:
+- `Order` có thêm `deliveredDroneId`, `deliveredDroneCode` (được set khi giao xong).
+- `Delivery` có `batteryUsedPercent`, `distanceKm`, `actualFlightTimeSeconds` (ghi lại khi hoàn tất).
+- `Drone` có `currentBatteryPercent`, `lastLatitude/lastLongitude`, `lastTelemetryAt`, `status`.
 
 Xem ERD: `Docucment_PRD/plantuml/erd_vi.puml`.
 
-Lưu ý thiết kế:
-- UserAddress và StoreAddress lưu lat/lng để phục vụ lựa chọn Drone và tính khoảng cách
-- Order lưu `deliveryAddressSnapshot` để đảm bảo bất biến theo thời điểm đặt
-- PaymentTransaction liên kết với Order; VNPay IPN là nguồn quyết định cuối
-- Delivery liên kết Order và Drone; trạng thái tiến dần đến COMPLETED
+---
 
-## 5. Thiết kế bảo mật
+## 5) Bảo mật
 
-- JWT Bearer cho các API cần đăng nhập
-- CORS mở trong dev để thuận tiện; có thể siết chặt theo domain
-- Mật khẩu băm, khóa JWT quản lý qua cấu hình
+- JWT Bearer cho các API yêu cầu đăng nhập.
+- Dev: có thể bật mật khẩu dạng NoOp (plaintext) và khóa JWT qua `application-dev.yaml` để thuận tiện thử nghiệm.
+- CORS mở cho nguồn dev (Frontend 3000) thông qua reverse proxy, hạn chế cấu hình trong prod.
 
-## 6. Thiết kế thanh toán
+---
 
-- Mỗi lần thanh toán: sinh `vnp_TxnRef` duy nhất
-- Thêm `vnp_CreateDate`/`vnp_ExpireDate` để tránh lỗi timeout sandbox
-- Không ép `bankCode` để tránh code=76
-- Return page chỉ hiển thị; IPN quyết định cập nhật Order/Payment
+## 6) Thanh toán (VNPay + mô phỏng)
 
-## 7. Thiết kế giao vận Drone
+- Hỗ trợ mô phỏng thanh toán trong dev: `app.payments.allow-simulate=true` để kích hoạt endpoint giả lập thành công.
+- Khi thanh toán xác nhận thành công, backend cập nhật trạng thái Order/Payment và tạo Delivery.
+- Return page chỉ hiển thị kết quả; quyết định cuối đến từ backend (IPN/giả lập).
 
-- Chọn drone dựa trên: trạng thái AVAILABLE, tải trọng tối đa, pin hiện tại, khoảng cách tới điểm lấy hàng
-- Ưu tiên drone gần hơn; nếu tương đương, chọn pin cao hơn
-- Khi giao xong, đặt drone AVAILABLE
+---
 
-## 8. Cấu hình & Profile
+## 7) Giao vận Drone – Quy tắc nghiệp vụ
 
-- `application-dev.yaml`: H2 in-memory, seed demo, bật mô phỏng
-- `application.yaml`: dùng MySQL và thông số thật (không commit vào repo)
-- Flags dev:
-  - `app.demo.enable=true` → seed drone mẫu
-  - `app.payments.allow-simulate=true` → endpoint mô phỏng thanh toán
+Trạng thái Delivery tiêu biểu: `QUEUED` → `ASSIGNED` → `LAUNCHED` → `ARRIVING` → `COMPLETED`.
 
-## 9. Triển khai (Deployment)
+Hoàn tất giao hàng (COMPLETED) – xử lý đã hiện thực trong `DeliveryService`:
+- Tính khoảng cách từ cửa hàng đến điểm giao dựa trên toạ độ (store address vs. snapshot dropoff).
+- Tính tiêu hao pin ước lượng: ~12%/km + 15% (tối thiểu 25%, tối đa 100%).
+- Cập nhật Delivery: `batteryUsedPercent`, `distanceKm`, `actualFlightTimeSeconds` (từ departure/arrival).
+- Cập nhật Drone:
+  - Trừ `currentBatteryPercent` theo usage, không âm.
+  - Cập nhật vị trí cuối về điểm giao, `lastTelemetryAt=now`.
+  - Đặt `status=AVAILABLE`.
+- Cập nhật Order: set `deliveredDroneId` và `deliveredDroneCode`.
 
-- Mô hình tham chiếu: Browser ↔ Spring Boot ↔ MySQL; tích hợp VNPay; kết nối tới Drone (nếu có API)
-- Xem sơ đồ Deployment: `Docucment_PRD/plantuml/deployment_vi.puml`
+Sạc pin (DRONE.CHARGING) – xử lý đã hiện thực trong `DroneService`:
+- Khi vào trạng thái `CHARGING`, tiến trình sạc chạy sau khi transaction commit (tránh lỗi cần bấm 2 lần), tăng ~5%/s tới 100%.
+- Nếu status đổi khỏi `CHARGING`, vòng sạc dừng ngay.
+- Khi `currentBatteryPercent=100`, UI sẽ vô hiệu hóa nút sạc.
 
-## 10. Mở rộng tương lai
+Trả drone về trạm:
+- Endpoint “return-to-station” đặt vị trí drone về tọa độ trạm và status phù hợp, sau đó có thể sạc.
 
-- WebSocket để realtime thay vì polling
-- Tối ưu thuật toán chọn drone (thời tiết, no-fly zone)
-- Tối ưu hóa bảo mật, phân quyền chặt cho quản trị cửa hàng
-- Hoàn thiện payout, sổ cái theo kỳ
+---
+
+## 8) API (tóm tắt)
+
+Tiền tố phiên bản: đa số dưới `/api/v1/...` (một số root như `/auth`, `/drones` tuỳ module hiện trạng).
+
+- Auth: `/auth/login`, `/auth/validate`, `/auth/logout`.
+- Order: `GET /api/v1/orders/{id}`.
+- Delivery: `GET /api/v1/deliveries/by-order/{orderId}`, `PATCH /api/v1/deliveries/{id}/status`.
+- Drone: `POST /drones/{id}/return-to-station`, `POST /drones/{id}/charge`, `GET /drones`.
+- Payment (dev): mô phỏng thành công nếu bật `app.payments.allow-simulate`.
+
+DTO/Mapper:
+- MapStruct dùng để map Entity → Response DTO (ví dụ `DeliveryResponse` có thêm `batteryUsedPercent`, `distanceKm`, `actualFlightTimeSeconds`).
+
+---
+
+## 9) Cấu hình & môi trường
+
+`backend/source/resources/application-dev.yaml` (mặc định):
+- `server.port=8080`.
+- Kết nối MySQL `jdbc:mysql://localhost:3306/fast_food_delivery?...`.
+- `spring.jpa.hibernate.ddl-auto=create` (dev) – cẩn trọng dữ liệu.
+- Seed dữ liệu demo qua `spring.sql.init.mode=always` và `data-locations` (tuỳ bật/tắt theo nhu cầu).
+- JWT: `jwt.signerKey`, `valid-duration`, `refreshable-duration`.
+- Frontend base URL cho trang thanh toán: `frontend.base-url=http://localhost:3000`.
+- Cờ demo/thanh toán mô phỏng: `app.demo.enable`, `app.payments.allow-simulate=true`.
+
+---
+
+## 10) Giao tiếp Frontend
+
+- Frontend dev server (Node/Express) chạy tại `http://localhost:3000`, proxy các path (`/api`, `/auth`, `/drones`, ...) đến backend `http://localhost:8080`.
+- Tracking UI sử dụng OpenLayers hiển thị tuyến đường & drone; polling API để cập nhật tiến trình.
+- Sau khi giao xong, UI lưu dấu đã hiển thị thông báo; lần truy cập lại sẽ không bật modal, nhưng vẫn hiển thị thông tin drone và các chỉ số hoàn tất.
+
+---
+
+## 11) Xử lý lỗi & giao dịch
+
+- Service đảm bảo cập nhật atomically các thay đổi khi hoàn tất giao hàng (Delivery, Drone, Order).
+- Vòng sạc drone khởi động sau commit để tránh đua giao dịch và lỗi UI “bấm 2 lần mới sạc”.
+- Exception được trả về dạng chuẩn hoá (HTTP status + thông điệp) qua lớp xử lý ngoại lệ chung.
+
+---
+
+## 12) Kiểm thử & mở rộng
+
+- Tồn tại các bài test tích hợp/đơn vị mẫu trong `backend/source/test` và `src/test/java` (ví dụ `PaymentInitIT`, `AdminDiagnosticsControllerTest`).
+- Mở rộng tương lai:
+  - Chuyển polling sang WebSocket/SSE cho realtime mượt hơn.
+  - Tối ưu thuật toán chọn drone (khu vực cấm bay, thời tiết, traffic vùng bay...).
+  - Hoàn thiện Flyway migration thay vì seed qua `data.sql` trong dev.
+  - Chuẩn hóa versioning endpoint và tài liệu OpenAPI.

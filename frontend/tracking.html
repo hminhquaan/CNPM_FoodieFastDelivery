@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Foodie - Theo dõi đơn hàng</title>
+    <link rel="icon" type="image/svg+xml" href="img/favicon-main.svg">
+    <meta name="theme-color" content="#ff6b6b">
+    <link rel="stylesheet" href="css/style.css?v=20251111">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <!-- OpenLayers CSS: local-first + CDN fallback -->
+    <link rel="stylesheet" href="vendor/ol.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@latest/ol.css" />
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="container">
+            <div class="header-content">
+                <a href="index.html" class="logo">
+                    <i class="fas fa-utensils"></i>
+                    <span>Foodie</span>
+                </a>
+                <nav class="nav">
+                    <a href="index.html" class="nav-link">Trang chủ</a>
+                    <a href="stores.html" class="nav-link">Cửa hàng</a>
+                </nav>
+                <div class="header-actions">
+                    <a href="cart.html" class="btn btn-outline btn-sm" aria-label="Giỏ hàng">
+                        <i class="fas fa-shopping-cart"></i>
+                        <span class="cart-badge" id="cartBadge">0</span>
+                    </a>
+                    <div class="user-menu" id="userMenu">
+                        <div id="guestMenu">
+                            <button class="btn btn-outline btn-sm" onclick="window.location.href='index.html'">Đăng nhập</button>
+                            <button class="btn btn-primary btn-sm" onclick="window.location.href='index.html'">Đăng ký</button>
+                        </div>
+                        <div class="user-dropdown" id="userDropdown" style="display: none;">
+                            <button id="userAvatar" class="user-avatar" onclick="toggleDropdown()" aria-haspopup="true" aria-expanded="false">
+                                <i class="fas fa-user-circle"></i>
+                                <span id="userName"></span>
+                            </button>
+                            <div class="dropdown-menu" id="dropdownMenu">
+                                <a href="orders.html"><i class="fas fa-box"></i> Đơn hàng của tôi</a>
+                                <a href="profile.html"><i class="fas fa-user"></i> Hồ sơ của tôi</a>
+                                <a href="#" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Đăng xuất</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <section class="section" style="padding-top: 1.5rem;">
+        <div class="container">
+            <h1 class="section-title">
+                <i class="fas fa-location-arrow"></i> Theo dõi đơn hàng
+            </h1>
+
+            <!-- Order summary + timeline + map -->
+            <div class="card">
+                <div class="card-body">
+                    <div id="orderSummary">
+                        <!-- Thông tin đơn hàng sẽ được load bằng JS -->
+                        <div class="empty-state">
+                            <i class="fas fa-spinner fa-spin"></i>
+                            <p>Đang tải thông tin đơn hàng...</p>
+                        </div>
+                    </div>
+
+                    <div id="orderTimeline" style="margin-top: 1.5rem;">
+                        <!-- Timeline 5 giai đoạn sẽ render ở đây -->
+                    </div>
+
+                    <div id="trackingMapContainer" style="margin-top: 1.5rem;">
+                        <h3 style="margin-bottom: 0.75rem;">
+                            <i class="fas fa-drone"></i> Vị trí giao hàng real-time
+                        </h3>
+                        <div id="deliveryMap" style="margin-top:0.5rem; height:360px; border:1px solid #eee; border-radius:8px; display:block;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Details panels -->
+            <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px;">
+                <div class="card">
+                    <div class="card-body">
+                        <h3 style="margin:0 0 0.75rem 0;"><i class="fas fa-receipt"></i> Chi tiết đơn hàng</h3>
+                        <div id="orderDetailsBox">
+                            <div class="empty-state"><i class="fas fa-info-circle"></i> Đang tải chi tiết...</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-body">
+                        <h3 style="margin:0 0 0.75rem 0;"><i class="fas fa-drone"></i> Drone</h3>
+                        <div id="droneDetailsBox">
+                            <div class="empty-state"><i class="fas fa-info-circle"></i> Chưa có thông tin drone</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+        <!-- OpenLayers JS: dynamic local-first loader with CDN fallback -->
+        <script>
+            (function(){
+                function load(src, fallback){
+                    var s=document.createElement('script');
+                    s.src=src; s.onload=function(){};
+                    s.onerror=function(){ if (fallback) load(fallback); };
+                    document.head.appendChild(s);
+                }
+                if (!window.ol){ load('vendor/ol.js','https://cdn.jsdelivr.net/npm/ol@latest/ol.js'); }
+            })();
+        </script>
+
+    <!-- Scripts -->
+    <script src="js/config.js?v=20251111"></script>
+    <script src="js/tracking.js?v=20251111"></script>
+</body>
+</html>

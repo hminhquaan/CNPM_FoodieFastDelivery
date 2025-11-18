@@ -59,6 +59,18 @@ public class Delivery {
     @Builder.Default
     LocalDateTime updatedAt = LocalDateTime.now();
 
+    // Battery percent consumed during the flight (set upon COMPLETED)
+    @Column(name = "battery_used_percent")
+    Integer batteryUsedPercent;
+
+    // Actual flight distance in kilometers (set upon COMPLETED)
+    @Column(name = "distance_km", precision = 10, scale = 3)
+    java.math.BigDecimal distanceKm;
+
+    // Actual flight time in seconds (set upon COMPLETED)
+    @Column(name = "actual_flight_time_seconds")
+    Integer actualFlightTimeSeconds;
+
     // Relationships
     @OneToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "order_id", referencedColumnName = "id", insertable = false, updatable = false,

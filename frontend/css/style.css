@@ -10,6 +10,9 @@
   --success: #2E7D32;
   --warning: #B08900;
   --danger: #B91C1C;
+  /* aliases for components expecting these tokens */
+  --primary-color: var(--primary);
+  --gray: var(--muted);
 
   /* neutrals (light UI) */
   --bg: #FAFAFB;

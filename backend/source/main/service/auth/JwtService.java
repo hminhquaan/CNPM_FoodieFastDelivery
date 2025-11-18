@@ -3,7 +3,6 @@ package service.auth;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
-import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -73,7 +72,15 @@ public class JwtService {
     }
 
     private Key getSignInKey() {
-        byte[] keyBytes = Decoders.BASE64.decode(signerKey);
-        return Keys.hmacShaKeyFor(keyBytes);
+        // Support both Base64-encoded and plain-text secrets for compatibility
+        try {
+            byte[] decoded = java.util.Base64.getDecoder().decode(signerKey);
+            if (decoded != null && decoded.length > 0) {
+                return Keys.hmacShaKeyFor(decoded);
+            }
+        } catch (IllegalArgumentException ignored) {
+            // Not Base64, fall back to plain string bytes
+        }
+        return Keys.hmacShaKeyFor(signerKey.getBytes());
     }
 }

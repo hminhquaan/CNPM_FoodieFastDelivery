@@ -35,7 +35,8 @@ public class Order {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false,
-            columnDefinition = "enum('CREATED','PENDING_PAYMENT','PAID','IN_DELIVERY','DELIVERED','CANCELLED','REFUNDED') default 'CREATED'")
+        // Include all OrderStatus values to align with MySQL enum definition
+        columnDefinition = "enum('CREATED','PENDING_PAYMENT','PAID','ACCEPT','PREPARING','IN_DELIVERY','DELIVERED','CANCELLED','REFUNDED') default 'CREATED'")
     @Builder.Default
     OrderStatus status = OrderStatus.CREATED;
 
@@ -73,6 +74,13 @@ public class Order {
     @Column(name = "updated_at", nullable = false)
     @Builder.Default
     LocalDateTime updatedAt = LocalDateTime.now();
+
+    // Delivery result summary
+    @Column(name = "delivered_drone_id")
+    Long deliveredDroneId;
+
+    @Column(name = "delivered_drone_code", length = 100)
+    String deliveredDroneCode;
 
     // Relationships
     @ManyToOne(fetch = FetchType.LAZY)

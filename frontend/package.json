@@ -4,13 +4,16 @@
   "private": true,
   "scripts": {
     "dev": "node server.js",
+    "dev:nolive": "cross-env LIVERELOAD=0 node server.js",
     "dev:noproxy": "cross-env DEV_PROXY=0 node server.js",
     "dev:http": "http-server -a localhost -c-1 -p 3000 .",
     "dev:clean": "rimraf node_modules && npm install"
   },
   "dependencies": {
     "express": "^4.21.0",
-    "compression": "^1.7.4"
+    "compression": "^1.7.4",
+    "leaflet": "^1.9.4",
+    "ol": "^9.1.0"
   },
   "devDependencies": {
     "http-server": "^14.1.1",

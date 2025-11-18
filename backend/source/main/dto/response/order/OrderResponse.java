@@ -40,5 +40,9 @@ public class OrderResponse {
 
     LocalDateTime createdAt;
     LocalDateTime updatedAt;
+
+    // Delivery result summary
+    Long deliveredDroneId;
+    String deliveredDroneCode;
 }
 

@@ -2,6 +2,9 @@ package repository.order;
 
 import entity.Order;
 import enums.OrderStatus;
+import enums.PaymentStatus;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -13,11 +16,18 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 
     Optional<Order> findByOrderCode(String orderCode);
 
-    List<Order> findByUserId(Long userId);
+    // All orders of a user, newest first
+    List<Order> findByUserIdOrderByCreatedAtDesc(Long userId);
 
     List<Order> findByStoreId(Long storeId);
 
     List<Order> findByStatus(OrderStatus status);
 
     List<Order> findByUserIdAndStatus(Long userId, OrderStatus status);
+
+    // Kitchen queue: orders of a store that have been paid and awaiting or in acceptance
+    @Query("SELECT o FROM Order o WHERE o.storeId = :storeId AND o.paymentStatus = :paymentStatus AND o.status IN :statuses ORDER BY o.createdAt ASC")
+    List<Order> findKitchenQueue(@Param("storeId") Long storeId,
+                                 @Param("paymentStatus") PaymentStatus paymentStatus,
+                                 @Param("statuses") List<OrderStatus> statuses);
 }

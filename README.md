@@ -1,169 +1,183 @@
-# FoodFast Delivery (Spring Boot + Vanilla JS)
+<div align="center">
 
-Nền tảng đặt món giao nhanh với cửa hàng, sản phẩm, giỏ hàng và đơn hàng. Backend dùng Spring Boot (Controller → Service → Repository), frontend HTML/CSS/JS thuần.
+# 🍔🚁 Drone Fastfood — Hệ thống giao đồ ăn bằng drone
 
-## Kiến trúc & Công nghệ
+**Nền tảng giao đồ ăn full‑stack kết nối nhà hàng, khách hàng và điều phối giao hàng theo thời gian thực.**
 
-- Backend: Spring Boot 3, Spring Security (JWT), Spring Data JPA (Hibernate), Lombok, MapStruct, Maven
-- CSDL: MySQL 8 (dev/prod). Flyway hiện tắt. Không còn H2.
-- Frontend: HTML/CSS/JS thuần (không framework)
-- Context-path: `/` (gốc). Base URL: http://localhost:8080
+<sub>Công nghệ phần mềm — Lớp DCT122C3</sub>
 
-Thư mục chính:
+</div>
 
+
+## ✨ Tính năng chính
+
+- Đăng ký/Đăng nhập, phân quyền (Khách hàng, Quản trị, Chủ cửa hàng)
+- Quản lý nhà hàng và thực đơn, giỏ hàng, đặt món, thanh toán giả lập
+- Theo dõi đơn hàng thời gian thực trên bản đồ (OpenLayers)
+- Mô phỏng giao hàng bằng drone: bay, tiêu hao pin theo quãng đường, về trạm sạc, sạc tăng dần
+- Trang quản trị: quản lý người dùng/đơn hàng/thực đơn, theo dõi và điều khiển drone (gọi về trạm, sạc)
+- Ghi nhận các chỉ số sau giao hàng: phần trăm pin đã dùng, quãng đường, thời gian bay; lưu drone đã giao đơn
+
+## 🧰 Tech Stack
+
+- Frontend: HTML/CSS/JS thuần + OpenLayers; Dev server: Node.js (Express) + LiveReload
+- Backend: Java 17 + Spring Boot 3 (Web, Security, Validation, Data JPA)
+- CSDL: MySQL (Flyway sẵn sàng; seed dữ liệu qua `application-dev.yaml` nếu bật)
+- Build: Maven
+
+---
+
+## 🚀 Bắt đầu
+
+Yêu cầu trước:
+- JDK 17
+- Maven 3.8+
+- Node.js 18+ (khuyến nghị v20)
+- MySQL 8.0 đang chạy tại máy (mặc định `localhost:3306`)
+
+### 1) Cấu hình môi trường Backend (dev)
+
+Chỉnh file `backend/source/resources/application-dev.yaml` cho kết nối MySQL của bạn (user/password/database). Mặc định chạy cổng `8080` với profile `dev`.
+
+Ví dụ cấu hình (rút gọn):
+
+```yaml
+server:
+  port: 8080
+spring:
+  datasource:
+    url: jdbc:mysql://localhost:3306/fast_food_delivery?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC&useLegacyDatetimeCode=false&allowPublicKeyRetrieval=true&useUnicode=true&characterEncoding=UTF-8
+    username: root
+    password: <your_password>
+  jpa:
+    hibernate:
+      ddl-auto: create
 ```
-backend/
-  source/
-    main/        # Java code (controllers, services, repositories, entities, config)
-    resources/   # application.yaml, application-dev.yaml
-frontend/        # HTML, CSS, JS, assets
-pom.xml          # Maven build (đóng gói jar vào target/)
-```
 
-## Tính năng chính
+### 2) Cài dependencies
 
-- Đăng ký/đăng nhập JWT; phản hồi đăng nhập trả về accessToken và thông tin user.
-- Quản lý cửa hàng, danh mục, sản phẩm, đơn hàng, người dùng.
-- Giỏ hàng → tạo đơn: `POST /api/v1/orders`.
-- Tra cứu và theo dõi giao hàng (admin): tiến trình QUEUED → ASSIGNED → LAUNCHED → ARRIVING → COMPLETED.
-- Thanh toán VNPay (sandbox) và chế độ mô phỏng thanh toán thành công (dev).
-- Quản lý địa chỉ người dùng (CRUD + đặt mặc định).
-
-Tài khoản mẫu (nếu đã nhập data.sql demo):
-- Admin: `admin` / `password`
-- User: `linh.ng` / `password`
-
-## Cấu hình
-
-- File thật: `backend/source/resources/application.yaml`
-- Mẫu: `backend/source/resources/application.example.yaml`
-
-Sao chép file mẫu và điền thông tin MySQL + VNPay + JWT:
-
-```
-backend/source/resources/application.example.yaml → backend/source/resources/application.yaml
-```
-
-Các khóa chính trong cấu hình:
-- spring.datasource.url/username/password: kết nối MySQL
-- jwt.signerKey: khóa ký JWT
-- vnpay.*: thông số sandbox VNPay
-- app.payments.allow-simulate: cho phép mô phỏng thanh toán (dev)
-
-Hồ sơ dev: `backend/source/resources/application-dev.yaml` (context-path `/`, MySQL, ddl-auto=update, spring.sql.init.mode=never).
-
-## Chạy dự án
-
-Yêu cầu: Java 17, Maven, MySQL 8. Trên Windows (PowerShell).
-
-1) Build jar (bỏ qua test):
+Backend (Maven):
 
 ```powershell
+cd "c:\Users\hmquaan\Downloads\SGU 2022-2027\Sem1 2025-2026\CNPM\FoodFastDelivery"
 mvn -DskipTests package
 ```
 
-2) Chạy qua Maven (dev profile):
+Frontend (Node):
 
 ```powershell
-$env:SPRING_PROFILES_ACTIVE='dev'; mvn -q -f .\pom.xml spring-boot:run
+cd "c:\Users\hmquaan\Downloads\SGU 2022-2027\Sem1 2025-2026\CNPM\FoodFastDelivery\frontend"
+npm install
 ```
 
-3) Hoặc chạy jar:
+### 3) Chạy chế độ phát triển (hot reload)
+
+- Backend (Spring Boot, profile `dev`):
 
 ```powershell
-java -jar -Dspring.profiles.active=dev target\backend-0.0.1-SNAPSHOT.jar
+cd "c:\Users\hmquaan\Downloads\SGU 2022-2027\Sem1 2025-2026\CNPM\FoodFastDelivery"
+$env:SPRING_PROFILES_ACTIVE='dev'; mvn -q spring-boot:run
+# Backend tại http://localhost:8080
 ```
 
-Sau khi chạy: Backend tại `http://localhost:8080`.
+- Frontend (Express dev server + LiveReload, proxy về backend):
 
-### Chạy nhanh bằng VS Code Tasks
+```powershell
+cd "c:\Users\hmquaan\Downloads\SGU 2022-2027\Sem1 2025-2026\CNPM\FoodFastDelivery\frontend"
+npm run dev
+# Frontend tại http://localhost:3000 (proxy /api, /auth, /drones ... → http://localhost:8080)
+```
 
-Terminal → Run Task…
-- Backend (dev): run — chạy Spring Boot với profile `dev`
-- Build Backend (Maven package) — đóng gói jar
-- Run Backend (Spring Boot) — chạy qua Maven goal `spring-boot:run`
-- Run Backend (Jar) — chạy file jar đã build
+Gợi ý:
+- Tắt proxy nếu cần: `npm run dev:noproxy`
+- Tắt live-reload: `npm run dev:nolive`
+- Đổi backend URL tạm thời: `BACKEND_URL=http://localhost:8080 npm run dev`
 
-### Frontend
+### 4) Chạy kiểu “production” cục bộ (không Docker)
 
-- Mở các file trong `frontend/` (ví dụ `index.html`, `stores.html`, `cart.html`, `orders.html`, `admin.html`).
-- Dùng “Live Server” hoặc một static server để tránh CORS/file://.
-- BASE_URL trong `frontend/js/config.js` mặc định: `http://localhost:8080`.
+Build backend JAR và chạy:
 
-## Dữ liệu mẫu & chính sách seed
+```powershell
+cd "c:\Users\hmquaan\Downloads\SGU 2022-2027\Sem1 2025-2026\CNPM\FoodFastDelivery"
+mvn -DskipTests package
+java -jar target\backend-0.0.1-SNAPSHOT.jar --spring.profiles.active=dev
+# API tại http://localhost:8080
+```
 
-- ĐÃ GỠ seed tự động khi khởi động (CommandLineRunner). DB sẽ không bị ghi đè.
-- Muốn có dữ liệu demo, nhập file `backend/data.sql` vào MySQL theo nhu cầu (thao tác thủ công 1 lần).
-- spring.sql.init.mode=never trong profile dev để tránh chạy lại data.sql.
+Serve frontend tĩnh qua `frontend/server.js` hoặc bất kỳ static server nào:
 
-Các mục đã có trong data.sql (mẫu): users, roles, stores, addresses, categories, products, đơn hàng + thanh toán + delivery demo.
+```powershell
+cd "c:\Users\hmquaan\Downloads\SGU 2022-2027\Sem1 2025-2026\CNPM\FoodFastDelivery\frontend"
+npm run dev:http
+# Mặc định http://localhost:3000 (không proxy). Sử dụng trình duyệt mở các trang .html
+```
 
-## Thanh toán mô phỏng (dev)
+### 5) Tài khoản và dữ liệu mẫu
 
-- Bật trong cấu hình: `app.payments.allow-simulate=true` (đã bật trong application-dev.yaml).
-- Gọi: `POST /api/v1/payments/simulate-success?orderId={id}` để đánh dấu thanh toán thành công → hệ thống sẽ khởi tạo Delivery (nếu logic của bạn hỗ trợ).
-- Gợi ý “test card”: Vì VNPay sandbox cần redirect, với mô phỏng bạn không cần nhập thẻ. Dùng endpoint simulate-success để bỏ qua form thẻ trong dev.
+- Có thể bật seed trong `application-dev.yaml` (mục `spring.sql.init` → `mode: always`) để nạp dữ liệu demo.
+- Người dùng quản trị/owner có thể cấu hình qua bảng CSDL hoặc endpoint quản trị nếu đã bật.
 
-## Theo dõi giao hàng (Admin UI)
+---
 
-- Mở `frontend/admin.html` → Đơn hàng → nút Xem hoặc Theo dõi.
-- Modal chi tiết hiển thị timeline giao hàng (QUEUED → ASSIGNED → LAUNCHED → ARRIVING → COMPLETED) và tự động polling 4s khi đang vận hành.
-- Bạn có thể dùng data.sql đã có đơn và delivery mẫu để kiểm thử.
+## 🗂️ Cấu trúc dự án (rút gọn)
 
-## Quản lý địa chỉ người dùng
+```
+FoodFastDelivery/
+├─ backend/
+│  └─ source/
+│     ├─ main/                   # AppMain.java, controllers, services, entities, ...
+│     └─ resources/              # application-dev.yaml, data.sql
+├─ frontend/
+│  ├─ *.html                     # index, admin, tracking, orders, ...
+│  ├─ js/                        # main.js, tracking.js, admin.js, api.js, ...
+│  ├─ css/, img/, vendor/
+│  └─ server.js                  # Dev server (Express + proxy + livereload)
+├─ pom.xml                       # Maven (Spring Boot)
+└─ package.json                  # Frontend dev scripts
+```
 
-Backend endpoints (`/users/{userId}/addresses`):
-- GET: lấy danh sách địa chỉ
-- POST: tạo địa chỉ
-- PUT: cập nhật địa chỉ `/users/{userId}/addresses/{addressId}`
-- DELETE: xóa địa chỉ `/users/{userId}/addresses/{addressId}`
-- PUT: đặt mặc định `/users/{userId}/addresses/{addressId}/set-default`
+## 🧪 Một số API tiêu biểu
 
-Admin UI: trong modal người dùng có phần “Địa chỉ người dùng” (thêm/sửa/xóa/đặt mặc định).
+- Auth: `POST /auth/login`, `GET /auth/validate`, `POST /auth/logout`
+- Sản phẩm/Đơn hàng: `GET /api/v1/products`, `POST /api/v1/orders`, `GET /api/v1/orders/{id}`
+- Giao hàng: `GET /api/v1/deliveries/by-order/{orderId}`, `PATCH /api/v1/deliveries/{id}/status`
+- Drone: `GET /drones`, `POST /drones/{id}/return-to-station`, `POST /drones/{id}/charge`
 
-## API quan trọng (tóm tắt)
+Lưu ý: Đường dẫn cụ thể có thể thay đổi theo module, xem mã nguồn controller trong `backend/source/main/controller/**`.
 
-- Auth: `/auth/signup`, `/auth/login`, `/auth/logout`, `/auth/validate`
-- Stores: `/api/stores` (CRUD, địa chỉ, thông tin thanh toán)
-- Products: `/products` (theo danh mục/cửa hàng)
-- Cart: `/api/cart` (thêm/sửa/xóa/đếm)
-- Orders: `/api/v1/orders` (+ `/user/{userId}`, `/code/{orderCode}`)
-- Delivery: `/api/v1/deliveries/order/{orderId}` (truy vấn trạng thái đơn)
-- Payment: `/api/v1/payments/*`, `POST /api/v1/payments/simulate-success?orderId=...` (dev)
+## 📖 Hướng dẫn sử dụng chi tiết
 
-Lưu ý: Context-path `/` (không còn `/home`).
+1) Khách hàng
+- Đăng ký/Đăng nhập từ `index.html`.
+- Chọn món, thêm giỏ hàng, tiến hành thanh toán giả lập.
+- Theo dõi đơn hàng tại `tracking.html?orderId=<ID>`:
+  - Bản đồ hiển thị lộ trình và drone (dấu chấm).
+  - Khi hoàn thành, trang hiển thị thông báo một lần; các lần mở lại sẽ ẩn thông báo và vẫn hiện bảng thông tin drone (pin đã dùng, quãng đường, thời gian bay, mã drone đã giao). Có thể ép ẩn bằng `&reopen=1`.
+- Trang `orders.html`: với đơn đã giao, nút “Xem kết quả giao hàng” mở lại tracking cho đơn đó.
 
-## Bảo mật
+2) Quản trị/Chủ cửa hàng
+- Mở `admin.html` để theo dõi danh sách drone và đơn hàng.
+- Hành động:
+  - “Return to station”: gọi drone về trạm; khi về trạm có thể sạc.
+  - “Charge”: bắt đầu sạc, pin tăng dần tới 100% (auto-refresh trong khi sạc).
+- Lưu ý: Drone tiêu hao pin theo quãng đường khoảng 12%/km + 15% (tối thiểu 25%).
 
-- JWT Bearer: gửi `Authorization: Bearer <token>`.
-- CORS mở cho dev.
+3) Ghi nhận sau giao hàng (telemetry)
+- Khi đơn hoàn tất, hệ thống:
+  - Trừ pin drone theo quãng đường thực, cập nhật vị trí và thời điểm telemetry.
+  - Ghi `batteryUsedPercent`, `distanceKm`, `actualFlightTimeSeconds` vào bản ghi giao hàng.
+  - Đánh dấu `deliveredDroneId`/`deliveredDroneCode` trong đơn.
 
-## Khắc phục sự cố
+## 🛠️ Khắc phục sự cố nhanh
 
-- Nếu chạy thất bại: kiểm tra MySQL (DB tồn tại/quyền/mật khẩu), chỉnh spring.datasource trong `application-dev.yaml` hoặc `application.yaml`.
-- 404: kiểm tra đúng base URL (`/`) và endpoint.
-- CORS: hãy dùng Live Server cho frontend.
+- Frontend báo proxy lỗi `ECONNREFUSED`: Hãy đảm bảo backend đang chạy ở `http://localhost:8080` hoặc bật `DEV_PROXY=0` để tạm tắt proxy.
+- Không kết nối MySQL: Kiểm tra `application-dev.yaml` (URL, user/password), MySQL đang chạy, tài khoản có quyền.
+- Seed dữ liệu chạy mỗi lần khởi động: Điều chỉnh `spring.sql.init.mode` và `data-locations` trong `application-dev.yaml`.
+- Lỗi biên dịch Lombok/MapStruct: Mở bằng VS Code với Java Extension Pack; chạy `mvn -DskipTests package` để xác nhận build OK.
 
-## Tài liệu thiết kế (PlantUML)
+---
 
-Thư mục PlantUML: `Docucment_PRD/plantuml`
-
-- Use Case tổng quan: `usecase-nguoi-dung-admin.puml`
-- Activity đặt hàng & thanh toán: `activity-dat-hang-thanh-toan.puml`
-- Activity vòng đời giao hàng bằng drone: `activity-giao-hang-drone.puml`
-- Sequence thanh toán: `sequence-thanh-toan.puml`
-- Sequence theo dõi giao hàng: `sequence-theo-doi-giao-hang.puml`
-- Backend mô tả thiết kế: `backend-thiet-ke-mo-ta.puml`
-- ERD cơ sở dữ liệu: `erd-database.puml`
-- Component backend: `component-backend.puml`
-- Deployment: `deployment.puml`
-
-Cách xem nhanh (khuyến nghị VS Code):
-1) Cài extension PlantUML
-2) Cài Graphviz hoặc dùng server render online
-3) Mở trực tiếp các file `.puml` để xem/Export PNG/SVG
-
-## Phát triển & đóng góp
-
-- Java 17, cấu trúc chuẩn của dự án.
-- Package chính: `controller`, `service`, `repository`, `entity`, `dto`, `config`.
+## 👥 Nhóm thực hiện
+- Huỳnh Minh Quân - 3122411167
+- Lê Duy Tín - 31224111210
+> Giảng viên hướng dẫn: TS. Nguyễn Quốc Huy

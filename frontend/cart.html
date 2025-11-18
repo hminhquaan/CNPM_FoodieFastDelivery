@@ -8,6 +8,9 @@
     <meta name="theme-color" content="#ff6b6b">
     <link rel="stylesheet" href="css/style.css?v=20251111">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <!-- OpenLayers CSS for map picker -->
+    <link rel="stylesheet" href="vendor/ol.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@latest/ol.css" />
 </head>
 <body>
     <!-- Header -->
@@ -31,6 +34,7 @@
                     <div class="user-menu" id="userMenu">
                         <div id="guestMenu">
                             <button class="btn btn-outline btn-sm" onclick="window.location.href='index.html'">Đăng nhập</button>
+                            <button class="btn btn-primary btn-sm" onclick="window.location.href='index.html'">Đăng ký</button>
                         </div>
                         <div class="user-dropdown" id="userDropdown" style="display: none;">
                             <button id="userAvatar" class="user-avatar" onclick="toggleDropdown()" aria-haspopup="true" aria-expanded="false">
@@ -38,7 +42,8 @@
                                 <span id="userName"></span>
                             </button>
                             <div class="dropdown-menu" id="dropdownMenu">
-                                <a href="orders.html"><i class="fas fa-box"></i> Đơn hàng</a>
+                                <a href="orders.html"><i class="fas fa-box"></i> Đơn hàng của tôi</a>
+                                <a href="profile.html"><i class="fas fa-user"></i> Hồ sơ của tôi</a>
                                 <a href="#" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Đăng xuất</a>
                             </div>
                         </div>
@@ -84,6 +89,16 @@
                         <div class="card-body">
                             <h3 class="card-title">Tổng Đơn Hàng</h3>
 
+                            <div style="margin-top: 0.5rem; padding: 0.75rem; background: #fafafa; border: 1px solid var(--light); border-radius: 8px;">
+                                <div style="display:flex; justify-content: space-between; align-items:center; gap: 0.5rem;">
+                                    <div>
+                                        <div style="font-weight:600;">Địa chỉ giao hàng</div>
+                                        <div id="dropoffDisplay" style="color: var(--gray); font-size: 0.9rem;">Sử dụng địa chỉ mặc định của bạn</div>
+                                    </div>
+                                    <button class="btn btn-outline btn-sm" onclick="openAddressModal()"><i class="fas fa-location-dot"></i> Chọn địa chỉ</button>
+                                </div>
+                            </div>
+
                             <div style="display: flex; justify-content: space-between; margin-top: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--light);">
                                 <span>Tạm tính:</span>
                                 <span id="subtotal">0đ</span>
@@ -125,8 +140,84 @@
         </div>
     </section>
 
+    <!-- Address Picker Modal -->
+    <div id="addressModal" class="modal" style="display:none;">
+        <div class="modal-content" style="max-width:720px;">
+            <div class="modal-header">
+                <h3><i class="fas fa-location-dot"></i> Chọn địa chỉ giao hàng</h3>
+                <button class="close" onclick="closeAddressModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1rem;">
+                    <div>
+                        <h4 style="margin:0 0 .5rem 0;">Địa chỉ đã lưu</h4>
+                        <div id="savedAddresses" class="card" style="max-height:260px; overflow:auto;">
+                            <div class="card-body" id="addressList">
+                                <div class="text-gray">Đang tải địa chỉ...</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div>
+                        <h4 style="margin:0 0 .5rem 0;">Tìm trên bản đồ</h4>
+                        <div class="card">
+                            <div class="card-body">
+                                <div class="form-group" style="position:relative;">
+                                    <label>Nhập địa chỉ để gợi ý</label>
+                                    <input id="addressSearch" class="form-control" placeholder="Ví dụ: 273 An Dương Vương, Quận 5, TP.HCM" autocomplete="off">
+                                    <div id="addressSuggestions" style="position:absolute; top:62px; left:0; right:0; background:#fff; border:1px solid #eee; border-radius:8px; max-height:200px; overflow:auto; display:none; z-index:10;"></div>
+                                </div>
+                                <div id="mapPicker" style="height:260px; border:1px solid #eee; border-radius:8px;"></div>
+                                <div style="margin-top:.5rem; color:#666; font-size:.9rem;">
+                                    Mẹo: Bấm vào bản đồ để chọn vị trí và tự động điền địa chỉ.
+                                </div>
+                                <div style="margin-top:.75rem; display:flex; gap:.5rem; justify-content:flex-end; flex-wrap:wrap;">
+                                    <button class="btn btn-outline btn-sm" onclick="clearPickedAddress()"><i class="fas fa-eraser"></i> Xóa chọn</button>
+                                    <button class="btn btn-outline btn-sm" onclick="useMyLocation()"><i class="fas fa-location-crosshairs"></i> Vị trí của tôi</button>
+                                    <button class="btn btn-primary btn-sm" onclick="confirmPickedAddress()"><i class="fas fa-check"></i> Dùng vị trí này</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="closeAddressModal()">Đóng</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- OpenLayers JS loader (local-first with CDN fallback) -->
+    <script>
+        (function(){
+            function load(src, fallback){
+                var s=document.createElement('script');
+                s.src=src; s.onerror=function(){ if (fallback) load(fallback); };
+                document.head.appendChild(s);
+            }
+            if (!window.ol){ load('vendor/ol.js','https://cdn.jsdelivr.net/npm/ol@latest/ol.js'); }
+        })();
+    </script>
     <script src="js/config.js?v=20251111"></script>
     <script src="js/cart.js?v=20251111"></script>
+    <script>
+        // Minimal modal behavior using existing styles
+        (function(){
+            const style = document.createElement('style');
+            style.textContent = `
+                .modal{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:1000}
+                .modal-content{background:#fff;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.15);width:92%;max-width:760px;overflow:hidden}
+                .modal-header,.modal-footer{padding:12px 16px;border-bottom:1px solid #eee;display:flex;align-items:center;justify-content:space-between}
+                .modal-footer{border-top:1px solid #eee;border-bottom:none}
+                .modal-body{padding:16px}
+                .close{background:none;border:none;font-size:22px;cursor:pointer}
+                .form-group{margin-bottom:.5rem}
+                .form-control{width:100%;padding:.5rem .6rem;border:1px solid #ddd;border-radius:8px}
+                #addressSuggestions > div{padding:.5rem .6rem; cursor:pointer; border-bottom:1px solid #f2f2f2}
+                #addressSuggestions > div:hover{background:#f7f7f7}
+            `;
+            document.head.appendChild(style);
+        })();
+    </script>
 </body>
 </html>
 

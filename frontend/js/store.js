@@ -307,7 +307,12 @@ async function addToCartFromModal() {
 
     } catch (error) {
         console.error('Error adding to cart:', error);
-        Toast.error(error.message || 'Không thể thêm vào giỏ hàng');
+        if (error && (error.status === 401 || error.status === 403)) {
+            Toast.warning('Vui lòng đăng nhập để thêm vào giỏ hàng');
+            setTimeout(() => { window.location.href = 'index.html'; }, 1200);
+        } else {
+            Toast.error(error.message || 'Không thể thêm vào giỏ hàng');
+        }
     } finally {
         Loading.hide();
     }

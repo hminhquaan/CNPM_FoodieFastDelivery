@@ -3,12 +3,19 @@
 let selectedOrder = null;
 let deliveryInfo = null;
 let deliveryPath = [];
+// OpenLayers map + layers
 let deliveryMap = null;
-let deliveryPolyline = null;
-let droneMarker = null;
+let deliveryVectorSource = null;
+let deliveryVectorLayer = null;
+let routeFeature = null;
+let droneFeature = null;
+let destFeature = null;
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', () => {
+    // Guard against double initialization if this script is accidentally loaded twice
+    if (window.__ordersPageInitialized) return;
+    window.__ordersPageInitialized = true;
     // Disable service worker caching in dev to avoid stale assets
     if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
         if ('serviceWorker' in navigator) {
@@ -25,45 +32,48 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // -- Map & Path helpers (global) --
 async function ensureDeliveryPath(delivery) {
+    // Always compute a clear, straight path: pickup (store) → dropoff (customer)
     if (deliveryPath && deliveryPath.length) return;
-    if (!delivery || !delivery.id) return;
-    try {
-        const resp = await fetch(`${API_CONFIG.BASE_URL}/api/v1/deliveries/${delivery.id}/flight-plan`, {
-            headers: APIHelper.getAuthHeaders()
-        });
-        if (resp.ok) {
-            const data = await resp.json();
-            const points = (data.result || data || []).map(p => [Number(p.latitude), Number(p.longitude)]).filter(a => !a.some(isNaN));
-            if (points.length) {
-                deliveryPath = points;
-                return;
-            }
-        }
-    } catch(e) {
-        console.warn('Flight plan fetch failed, fallback to synthetic path', e);
-    }
-    // Fallback synthetic path (legacy)
+    if (!delivery) return;
+
+    // Dropoff from snapshot
     let dropLat = null, dropLng = null;
     try {
         const snap = delivery && delivery.dropoffAddressSnapshot;
-        if (snap && snap.includes('lat') && snap.includes('lng')) {
-            const latMatch = snap.match(/"lat"\s*:\s*([-0-9.]+)/);
-            const lngMatch = snap.match(/"lng"\s*:\s*([-0-9.]+)/);
-            if (latMatch) dropLat = parseFloat(latMatch[1]);
-            if (lngMatch) dropLng = parseFloat(lngMatch[1]);
+        if (snap && snap.includes('{')) {
+            let m;
+            m = snap.match(/"lat"\s*:\s*([-0-9.]+)/) || snap.match(/"latitude"\s*:\s*([-0-9.]+)/);
+            if (m) dropLat = parseFloat(m[1]);
+            m = snap.match(/"lng"\s*:\s*([-0-9.]+)/) || snap.match(/"longitude"\s*:\s*([-0-9.]+)/);
+            if (m) dropLng = parseFloat(m[1]);
         }
-    } catch (_) {}
-    const storeLat = 10.762622, storeLng = 106.660172;
-    if (dropLat == null || isNaN(dropLat)) dropLat = 10.772622;
-    if (dropLng == null || isNaN(dropLng)) dropLng = 106.670172;
-    const start = [storeLat, storeLng];
+    } catch(_) {}
+
+    // Pickup from store address
+    let storeLat = 10.762622, storeLng = 106.660172;
+    try {
+        const storeId = delivery.pickupStoreId || (selectedOrder && selectedOrder.storeId);
+        if (storeId) {
+            const addrList = await APIHelper.get(`/api/stores/${storeId}/addresses`);
+            const first = (addrList && addrList.result && addrList.result[0]) || (Array.isArray(addrList) ? addrList[0] : null);
+            if (first && typeof first.longitude !== 'undefined' && typeof first.latitude !== 'undefined') {
+                storeLng = Number(first.longitude);
+                storeLat = Number(first.latitude);
+            }
+        }
+    } catch(e) { console.warn('Could not fetch store address, using defaults'); }
+
+    if (dropLat == null || isNaN(dropLat)) dropLat = storeLat + 0.01;
+    if (dropLng == null || isNaN(dropLng)) dropLng = storeLng + 0.01;
+
+    const start = [storeLat, storeLng]; // [lat, lng]
     const end = [dropLat, dropLng];
     const points = [];
-    const steps = 12;
+    const steps = 40; // denser straight line
     for (let i=0;i<=steps;i++) {
         const t = i/steps;
-        const lat = start[0] + (end[0]-start[0])*t + (Math.sin(t*Math.PI)*0.0025);
-        const lng = start[1] + (end[1]-start[1])*t + (Math.sin(t*Math.PI)*0.0025);
+        const lat = start[0] + (end[0]-start[0])*t;
+        const lng = start[1] + (end[1]-start[1])*t;
         points.push([lat,lng]);
     }
     deliveryPath = points;
@@ -73,28 +83,85 @@ function initDeliveryMap(delivery) {
     const mapEl = document.getElementById('deliveryMap');
     if (!mapEl) return;
     mapEl.style.display = 'block';
-    // If the container was re-rendered, Leaflet map's container may differ. Recreate map if needed.
-    if (deliveryMap && deliveryMap._container !== mapEl) {
-        try { deliveryMap.remove(); } catch(_) {}
-        deliveryMap = null;
-        deliveryPolyline = null;
-        droneMarker = null;
+    // Nếu thư viện chưa tải (bị chặn Tracking Prevention) thì bỏ qua và sẽ thử lại ở polling
+    if (!window.ol) {
+        console.warn('OpenLayers library (window.ol) chưa sẵn sàng, bỏ qua initDeliveryMap tạm thời');
+        return;
     }
+
+    // Convert [lat,lng] path -> [lon,lat] and project to map coordinates
+    const lonLatPath = (deliveryPath || []).map(([lat, lng]) => [Number(lng), Number(lat)]);
+    const projPath = lonLatPath.map(([lon, lat]) => ol.proj.fromLonLat([lon, lat]));
+    const startCoord = projPath[0] || ol.proj.fromLonLat([106.660172, 10.762622]);
+
     if (!deliveryMap) {
-        deliveryMap = L.map('deliveryMap');
-        deliveryMap.setView(deliveryPath[0], 13);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            maxZoom: 19,
-            attribution: '&copy; OpenStreetMap contributors'
-        }).addTo(deliveryMap);
-        deliveryPolyline = L.polyline(deliveryPath, { color: '#2563eb', weight: 4, opacity: .8 }).addTo(deliveryMap);
-        droneMarker = L.marker(deliveryPath[0], { title: 'Drone' }).addTo(deliveryMap);
-        deliveryMap.fitBounds(deliveryPolyline.getBounds(), { padding: [20,20] });
+        // Base OSM layer
+        const tileLayer = new ol.layer.Tile({ source: new ol.source.OSM() });
+        // Vector source/layer for route + drone
+        deliveryVectorSource = new ol.source.Vector();
+        deliveryVectorLayer = new ol.layer.Vector({ source: deliveryVectorSource });
+
+        deliveryMap = new ol.Map({
+            target: mapEl,
+            layers: [tileLayer, deliveryVectorLayer],
+            view: new ol.View({ center: startCoord, zoom: 13 })
+        });
+    } else {
+        // If map exists but vector source not, recreate vector layer
+        if (!deliveryVectorSource) {
+            deliveryVectorSource = new ol.source.Vector();
+            deliveryVectorLayer = new ol.layer.Vector({ source: deliveryVectorSource });
+            deliveryMap.addLayer(deliveryVectorLayer);
+        }
     }
+
+    // Clear previous features
+    deliveryVectorSource.clear();
+
+    // Route feature
+    if (projPath.length >= 2) {
+        routeFeature = new ol.Feature({
+            geometry: new ol.geom.LineString(projPath)
+        });
+        routeFeature.setStyle(new ol.style.Style({
+            stroke: new ol.style.Stroke({ color: '#2563eb', width: 4 })
+        }));
+        deliveryVectorSource.addFeature(routeFeature);
+        // Fit view to route
+        const extent = routeFeature.getGeometry().getExtent();
+        deliveryMap.getView().fit(extent, { padding: [20, 20, 20, 20], maxZoom: 16 });
+    }
+
+    // Drone marker feature
+    const dronePoint = projPath[0] || startCoord;
+    droneFeature = new ol.Feature({
+        geometry: new ol.geom.Point(dronePoint)
+    });
+    droneFeature.setStyle(new ol.style.Style({
+        image: new ol.style.Circle({
+            radius: 6,
+            fill: new ol.style.Fill({ color: '#ff3d00' }),
+            stroke: new ol.style.Stroke({ color: '#fff', width: 2 })
+        })
+    }));
+    deliveryVectorSource.addFeature(droneFeature);
+
+    // Destination marker feature (for clarity)
+    const destPoint = projPath[projPath.length - 1] || startCoord;
+    destFeature = new ol.Feature({ geometry: new ol.geom.Point(destPoint) });
+    destFeature.setStyle(new ol.style.Style({
+        image: new ol.style.Icon({
+            src: 'data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\"><circle cx=\"12\" cy=\"12\" r=\"6\" fill=\"%232563eb\"/></svg>'
+        })
+    }));
+    deliveryVectorSource.addFeature(destFeature);
+
+    // Ensure map renders correctly after modal becomes visible
+    setTimeout(() => deliveryMap.updateSize(), 0);
 }
 
 function updateDroneOnPath(delivery) {
-    if (!droneMarker || !deliveryPath.length) return;
+    if (!droneFeature || !deliveryPath.length) return;
     const order = ['QUEUED','ASSIGNED','LAUNCHED','ARRIVING','COMPLETED'];
     const idx = order.indexOf(delivery.currentStatus);
     if (idx < 0) return;
@@ -112,8 +179,61 @@ function updateDroneOnPath(delivery) {
         } catch(_) {}
     }
     const targetIndex = Math.min(deliveryPath.length-1, Math.round(fraction*(deliveryPath.length-1)) );
-    const coord = deliveryPath[targetIndex];
-    droneMarker.setLatLng(coord);
+    const [lat, lng] = deliveryPath[targetIndex];
+    const proj = ol.proj.fromLonLat([Number(lng), Number(lat)]);
+    droneFeature.getGeometry().setCoordinates(proj);
+    // Compute distance from current drone position to destination (meters)
+    try {
+        if (delivery.currentStatus === 'ARRIVING' && !window.__autoMarkDeliveredTriggered) {
+            const [destLat, destLng] = deliveryPath[deliveryPath.length - 1];
+            const dLat = (lat - destLat) * Math.PI / 180;
+            const dLng = (lng - destLng) * Math.PI / 180;
+            const a = Math.sin(dLat/2)**2 + Math.cos(lat*Math.PI/180) * Math.cos(destLat*Math.PI/180) * Math.sin(dLng/2)**2;
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            const distanceMeters = 6371000 * c; // Earth radius meters
+            if (distanceMeters < 30) { // threshold for arrival
+                window.__autoMarkDeliveredTriggered = true;
+                attemptAutoMarkDelivered(delivery);
+            }
+        }
+    } catch(e) {
+        console.warn('Distance calc failed', e);
+    }
+}
+
+async function attemptAutoMarkDelivered(delivery) {
+    try {
+        // Prefer updating delivery to COMPLETED so backend also updates order status
+        console.log('[autoMarkDelivered] attempting completion for delivery', delivery.id);
+        const completeResp = await APIHelper.post(`/api/v1/deliveries/${delivery.id}/complete`, {});
+        console.log('[autoMarkDelivered] completion response', completeResp);
+        // Refresh delivery info to reflect change
+        const refreshed = await APIHelper.get(API_CONFIG.ENDPOINTS.DELIVERY_BY_ORDER(delivery.orderId));
+        if (refreshed && refreshed.result) {
+            deliveryInfo = refreshed.result;
+            displayDeliveryTracking(deliveryInfo);
+        }
+    } catch (e) {
+        console.warn('Auto mark delivered failed:', e.message);
+        // In dev, try force-complete to keep backend state aligned with the simulation
+        const isDevViaProxy = (typeof API_CONFIG !== 'undefined' && API_CONFIG.BASE_URL === '');
+        if (isDevViaProxy && delivery && delivery.id) {
+            try {
+                console.log('[autoMarkDelivered][dev] attempting force-complete', delivery.id);
+                await APIHelper.post(`/api/v1/deliveries/dev/${delivery.id}/force-complete`, {});
+                const refreshed = await APIHelper.get(API_CONFIG.ENDPOINTS.DELIVERY_BY_ORDER(delivery.orderId));
+                if (refreshed && refreshed.result) {
+                    deliveryInfo = refreshed.result;
+                    displayDeliveryTracking(deliveryInfo);
+                    return;
+                }
+            } catch (fe) {
+                console.warn('Force-complete (dev) failed:', fe.message);
+            }
+        }
+        // Allow retry once if backend rejected due to timing; reset flag
+        setTimeout(() => { if (deliveryInfo && deliveryInfo.currentStatus === 'ARRIVING') window.__autoMarkDeliveredTriggered = false; }, 4000);
+    }
 }
 
 // Check auth and redirect if not logged in
@@ -126,6 +246,9 @@ function checkAuthAndLoadOrders() {
         return;
     }
 
+    // Prevent duplicate requests if called multiple times
+    if (window.__ordersLoadRequested) return;
+    window.__ordersLoadRequested = true;
     loadOrders();
 }
 
@@ -159,7 +282,7 @@ async function loadOrders() {
             throw new Error('Missing user id in session. Please log in again.');
         }
 
-        const response = await APIHelper.get(API_CONFIG.ENDPOINTS.USER_ORDERS(userId));
+    const response = await APIHelper.get(API_CONFIG.ENDPOINTS.USER_ORDERS(userId));
         const orders = response.result || [];
 
         if (orders.length === 0) {
@@ -174,6 +297,8 @@ async function loadOrders() {
         showEmptyOrders();
     } finally {
         Loading.hide();
+        // Mark finished to allow manual refresh when needed
+        window.__ordersLoaded = true;
     }
 }
 
@@ -223,9 +348,14 @@ function displayOrders(orders) {
                                 <i class="fas fa-redo"></i> Thanh toán lại
                             </button>
                         ` : ''}
-                        ${order.status === 'IN_DELIVERY' || order.status === 'PAID' ? `
-                            <button class="btn btn-primary btn-sm" onclick="trackDelivery(${order.id})">
-                                <i class="fas fa-drone"></i> Theo dõi
+                        ${(order.paymentStatus === 'PAID' && !['DELIVERED','CANCELLED','REFUNDED'].includes(order.status)) ? `
+                            <button class="btn btn-primary btn-sm" onclick="trackDelivery(${order.id}, '${order.status}', '${order.paymentStatus || ''}')" title="Theo dõi tiến trình giao hàng">
+                                <i class="fas fa-location-arrow"></i> Theo dõi đơn
+                            </button>
+                        ` : ''}
+                        ${(order.status === 'DELIVERED') ? `
+                            <button class="btn btn-secondary btn-sm" onclick="window.location.href='tracking.html?orderId=${order.id}'" title="Xem kết quả giao hàng">
+                                <i class="fas fa-location-arrow"></i> Xem kết quả giao hàng
                             </button>
                         ` : ''}
                     </div>
@@ -247,6 +377,8 @@ function getOrderStatusClass(status) {
         'CREATED': 'order-status status-pending',
         'PENDING_PAYMENT': 'order-status status-pending',
         'PAID': 'order-status status-paid',
+        'PREPARING': 'order-status status-paid',
+        'ACCEPT': 'order-status status-paid',
         'CONFIRMED': 'order-status status-paid',
         'IN_DELIVERY': 'order-status status-in-delivery',
         'DELIVERED': 'order-status status-delivered',
@@ -262,6 +394,8 @@ function getOrderStatusText(status) {
         'CREATED': 'Đã tạo',
         'PENDING_PAYMENT': 'Chờ thanh toán',
         'PAID': 'Đã thanh toán',
+        'PREPARING': 'Đang chuẩn bị',
+        'ACCEPT': 'Bếp đã nhận',
         'CONFIRMED': 'Đã xác nhận',
         'IN_DELIVERY': 'Đang giao hàng',
         'DELIVERED': 'Đã giao',
@@ -405,42 +539,66 @@ function displayOrderDetail(order) {
 }
 
 // Track delivery
-async function trackDelivery(orderId) {
-    try {
-        Loading.show();
-        console.log('[trackDelivery] orderId=', orderId);
-
-        const response = await APIHelper.get(API_CONFIG.ENDPOINTS.DELIVERY_BY_ORDER(orderId));
-        console.log('[trackDelivery] deliveryByOrder response=', response);
-        deliveryInfo = response && response.result ? response.result : null;
-
-        if (!deliveryInfo) {
-            Toast.warning('Đơn hàng chưa tạo Delivery. Vui lòng thử lại sau khi thanh toán thành công.');
-            return;
-        }
-        // Show tracking immediately
-        await ensureDeliveryPath(deliveryInfo);
-    displayDeliveryTracking(deliveryInfo);
-        document.getElementById('trackingModal').classList.add('show');
-        initDeliveryMap(deliveryInfo);
-        updateDroneOnPath(deliveryInfo);
-    // Khởi động polling một lần sau khi hiển thị ban đầu
-    startDeliveryPolling(deliveryInfo.id, deliveryInfo.currentStatus);
+/**
+ * Theo dõi đơn hàng. Nếu đơn vẫn ở trạng thái PAID (chưa ACCEPT) và chưa tạo Delivery
+ * hiển thị thông báo: "Chưa xem được do bên bếp chưa nhận đơn".
+ */
+function trackDelivery(orderId, orderStatus, paymentStatus) {
+    // Nếu đã giao, hiển thị thông báo hoàn thành ngay tại đây
+    if (orderStatus === 'DELIVERED') {
+        showOrderCompletedModal(orderId);
         return;
-
-    } catch (error) {
-        console.error('Error loading delivery:', error);
-        Toast.error('Không thể tải thông tin giao hàng');
-    } finally {
-        Loading.hide();
     }
+    // Điều hướng trực tiếp sang trang tracking; trang đó sẽ tải order + delivery nếu có
+    window.location.href = `tracking.html?orderId=${orderId}`;
+}
+
+// Hiển thị modal đơn hàng đã hoàn thành (tại trang orders)
+async function showOrderCompletedModal(orderId){
+    let order = null;
+    try {
+        const resp = await APIHelper.get(API_CONFIG.ENDPOINTS.ORDER_BY_ID(orderId));
+        order = resp && resp.result ? resp.result : null;
+    } catch(_) {}
+
+    const existing = document.getElementById('ordersCompletedModal');
+    if (existing) existing.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'ordersCompletedModal';
+    Object.assign(modal.style, { position:'fixed', inset:'0', background:'rgba(0,0,0,0.45)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:'9999' });
+    const card = document.createElement('div');
+    Object.assign(card.style, { background:'#fff', borderRadius:'12px', padding:'24px', width:'min(520px,92vw)', boxShadow:'0 12px 32px rgba(0,0,0,0.2)' });
+    card.innerHTML = `
+        <div style="text-align:center">
+            <i class="fas fa-check-circle" style="color:#2e7d32;font-size:3rem;"></i>
+            <h2 style="margin:12px 0 4px 0;color:#1b5e20;">Đơn hàng đã hoàn thành</h2>
+            <p style="margin:12px 0 0 0;color:#444;">Cảm ơn bạn đã đặt hàng. Chúc ngon miệng!</p>
+            <div style="margin-top:16px; color:#666;">
+                <div><strong>Mã đơn:</strong> ${order?.orderCode || ('ORD' + (orderId||''))}</div>
+                ${order?.updatedAt ? `<div><strong>Hoàn tất:</strong> ${FormatHelper.date(order.updatedAt)}</div>` : ''}
+                ${order?.deliveredDroneCode ? `<div><strong>Drone giao:</strong> ${order.deliveredDroneCode}</div>` : ''}
+            </div>
+            <div style="display:flex; gap:10px; justify-content:center; margin-top:20px;">
+                <button id="ordersCompletedView" class="btn btn-primary"><i class="fas fa-box"></i> Xem đơn hàng</button>
+                <button id="ordersCompletedTrack" class="btn btn-secondary"><i class="fas fa-location-arrow"></i> Xem kết quả giao hàng</button>
+                <button id="ordersCompletedHome" class="btn btn-outline"><i class="fas fa-home"></i> Về trang chủ</button>
+            </div>
+        </div>`;
+    modal.appendChild(card);
+    modal.addEventListener('click', (e)=>{ if (e.target===modal) modal.remove(); });
+    document.body.appendChild(modal);
+
+    document.getElementById('ordersCompletedView')?.addEventListener('click', ()=>{ modal.remove(); window.location.href='orders.html'; });
+    document.getElementById('ordersCompletedTrack')?.addEventListener('click', ()=>{ modal.remove(); window.location.href = `tracking.html?orderId=${orderId}`; });
+    document.getElementById('ordersCompletedHome')?.addEventListener('click', ()=>{ modal.remove(); window.location.href='index.html'; });
 }
 
 // Display delivery tracking
 function displayDeliveryTracking(delivery) {
     const content = document.getElementById('trackingContent');
-    // Preserve existing map element so we don't lose it when updating content
-    const existingMap = document.getElementById('deliveryMap');
+    // Tạo vùng chứa trạng thái riêng để không ghi đè node bản đồ
+    const statusWrap = document.createElement('div');
 
     const statusSteps = [
         { key: 'QUEUED', label: 'Đang chờ', icon: 'clock' },
@@ -519,17 +677,17 @@ function displayDeliveryTracking(delivery) {
             ` : ''}
         </div>
     `;
-    content.innerHTML = statusHtml;
-    // Re-attach map if it existed (or if not, keep placeholder)
-    if (existingMap) {
-        content.appendChild(existingMap);
-        existingMap.style.display = 'block';
+    statusWrap.innerHTML = statusHtml;
+    let mapEl = document.getElementById('deliveryMap');
+    if (!mapEl) {
+        mapEl = document.createElement('div');
+        mapEl.id = 'deliveryMap';
+        mapEl.style.cssText = 'margin-top:1rem; height:320px; border:1px solid #eee; border-radius:8px; display:block;';
     } else {
-        const mapHolder = document.createElement('div');
-        mapHolder.id = 'deliveryMap';
-        mapHolder.style.cssText = 'margin-top:1rem; height:320px; border:1px solid #eee; border-radius:8px; display:block;';
-        content.appendChild(mapHolder);
+        mapEl.style.display = 'block';
     }
+    // Thay nội dung bằng status + map (giữ node map ổn định)
+    content.replaceChildren(statusWrap, mapEl);
 
     // Lưu ý: Polling sẽ được kích hoạt một lần trong trackDelivery sau khi hiển thị lần đầu
 }
@@ -538,8 +696,8 @@ function startDeliveryPolling(deliveryId, status) {
     if (['COMPLETED','FAILED','RETURNED'].includes(status)) return;
     if (window.__deliveryPollInterval) clearInterval(window.__deliveryPollInterval);
     let attempts = 0;
-    const baseDelay = status === 'QUEUED' ? 4000 : 1500; // chậm hơn khi đang chờ gán drone
-    window.__deliveryPollInterval = setInterval(async () => {
+    let delay = status === 'QUEUED' ? 4000 : 1500; // chậm hơn khi đang chờ gán drone
+    const tick = async () => {
         try {
             const res = await APIHelper.get(API_CONFIG.ENDPOINTS.DELIVERY_BY_ORDER(deliveryInfo.orderId));
             const updated = res.result;
@@ -554,12 +712,13 @@ function startDeliveryPolling(deliveryId, status) {
             // If stuck in QUEUED too long => show warning and stop
             if (updated.currentStatus === 'QUEUED') {
                 attempts++;
-                // Sau 5 lần (~20s) dừng polling để tránh spam (không tự chuyển sang FAILED)
-                if (attempts > 5) {
-                    Toast.warning('Đang chờ drone khả dụng. Bạn có thể thử gán lại.');
-                    displayDeliveryTracking(updated);
+                // Sau 5 lần (~20s) chuyển sang polling chậm thay vì dừng hẳn
+                if (attempts === 5) {
+                    Toast.warning('Đang chờ drone khả dụng. Hệ thống sẽ tiếp tục theo dõi chậm hơn.');
+                    delay = 6000;
+                    // reset interval với delay mới
                     clearInterval(window.__deliveryPollInterval);
-                    return;
+                    window.__deliveryPollInterval = setInterval(tick, delay);
                 }
             } else {
                 // Once past QUEUED ensure flight path loaded
@@ -573,7 +732,8 @@ function startDeliveryPolling(deliveryId, status) {
         } catch (e) {
             console.warn('Polling delivery failed:', e.message);
         }
-    }, baseDelay);
+    };
+    window.__deliveryPollInterval = setInterval(tick, delay);
 }
 
 // Get delivery status text

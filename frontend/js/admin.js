@@ -19,21 +19,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Validate token with backend; backend expects POST /auth/validate { token }
     try {
-        const validateResp = await fetch(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.VALIDATE}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token })
-        });
-        const validateData = await validateResp.json().catch(() => ({ result: false }));
-        if (!validateResp.ok || !validateData.result) {
-            auth.logout();
+        const validateData = await APIHelper.postNoAuth(API_CONFIG.ENDPOINTS.VALIDATE, { token });
+        const ok = !!(validateData && (validateData.result === true || validateData === true));
+        if (!ok) {
+            AuthHelper.logout();
             renderAdminGuard('Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.');
             return;
         }
     } catch (e) {
         console.warn('Token validation failed', e);
-        auth.logout();
-        renderAdminGuard('Không thể xác thực phiên. Đăng nhập lại.');
+        // Do not forcibly clear storage on transient network/404 when served without proxy; just guard
+        renderAdminGuard('Không thể xác thực phiên. Vui lòng tải lại trang hoặc đăng nhập lại.');
         return;
     }
 
@@ -44,6 +40,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     const allRoles = [...new Set([...roles, ...tokenRoles])];
     // Accept both 'ADMIN' and 'ROLE_ADMIN'
     const hasAdmin = allRoles.some(r => r === 'ADMIN' || r === 'ROLE_ADMIN');
+    const hasStoreOwner = allRoles.some(r => r === 'STORE_OWNER' || r === 'ROLE_STORE_OWNER');
+    // Expose flags for other functions
+    window.ADMIN_FLAGS = { hasAdmin, hasStoreOwner };
     // If local user object lacks roles but token has roles, persist it for next loads
     if ((!user.roles || !user.roles.length) && tokenRoles.length) {
         try {
@@ -51,8 +50,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             localStorage.setItem('user', JSON.stringify(merged));
         } catch (_) { /* ignore */ }
     }
-    if (!hasAdmin) {
-        renderAdminGuard('Tài khoản của bạn không có quyền ADMIN');
+    if (!hasAdmin && !hasStoreOwner) {
+        renderAdminGuard('Tài khoản của bạn không có quyền phù hợp');
         return;
     }
 
@@ -66,13 +65,59 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (topbar) topbar.style.display = '';
 
     initAdminUI();
-    loadDashboardStats();
+    if (hasAdmin) {
+        loadDashboardStats();
+    } else if (hasStoreOwner) {
+        // Restrict to a limited UI for store owners (Dashboard + Orders + Kitchen)
+        try { restrictOwnerUI(); } catch(_) {}
+        try { loadOwnerDashboard(); } catch(_) {}
+    }
 
     const adminUserName = document.getElementById('adminUserName');
     if (adminUserName) {
         adminUserName.textContent = user?.username || 'Admin';
     }
+
+    // Initialize Kitchen section after auth checks
+    try {
+        setupKitchenSection();
+    } catch (e) {
+        console.warn('setupKitchenSection failed', e);
+    }
 });
+
+// Cached owned store ids for STORE_OWNER
+async function getOwnedStoreIds() {
+    const flags = window.ADMIN_FLAGS || {};
+    if (flags.hasAdmin) return null; // admin sees all
+    if (!flags.hasStoreOwner) return [];
+    if (Array.isArray(window.OWNED_STORE_IDS) && window.OWNED_STORE_IDS.length) {
+        return window.OWNED_STORE_IDS;
+    }
+    try {
+        const storesResp = await APIHelper.get(API_CONFIG.ENDPOINTS.STORES);
+        const stores = Array.isArray(storesResp?.result) ? storesResp.result : (Array.isArray(storesResp) ? storesResp : []);
+        const owned = [];
+        for (const s of stores) {
+            try {
+                // Probe access via orders-by-store endpoint guarded by ownership
+                await APIHelper.get(API_CONFIG.ENDPOINTS.ORDERS_BY_STORE(s.id));
+                owned.push(s.id);
+            } catch (e) {
+                if (e && e.status === 403) {
+                    // not owned; skip
+                } else {
+                    console.warn('Probe store ownership failed', s?.id, e);
+                }
+            }
+        }
+        window.OWNED_STORE_IDS = owned;
+        return owned;
+    } catch (e) {
+        console.warn('getOwnedStoreIds failed', e);
+        return [];
+    }
+}
 
 // --- Modal helpers (centered using .modal.show from style.css) ---
 function showModalById(id) {
@@ -87,6 +132,84 @@ function hideModalById(id) {
     if (!el) return;
     el.classList.remove('show');
     el.style.display = 'none';
+}
+
+// Limit admin UI for store owners to Kitchen section only
+function restrictOwnerUI(){
+    const links = document.querySelectorAll('.sidebar-link');
+    links.forEach(a => {
+        const sec = a.getAttribute('data-section');
+        const allowed = (sec === 'dashboard' || sec === 'orders' || sec === 'kitchen' || sec === 'products' || sec === 'categories');
+        a.style.display = allowed ? '' : 'none';
+    });
+    const sections = document.querySelectorAll('.admin-section');
+    sections.forEach(s => {
+        const id = s.id || '';
+        const allowed = (id === 'section-dashboard' || id === 'section-orders' || id === 'section-kitchen' || id === 'section-products' || id === 'section-categories');
+        s.style.display = allowed ? '' : 'none';
+    });
+    // Default focus: Dashboard for quick revenue view
+    const dashLink = document.querySelector('.sidebar-link[data-section="dashboard"]');
+    if (dashLink) dashLink.click();
+}
+
+// ----- Store Owner: Dashboard revenue across owned stores -----
+async function loadOwnerDashboard() {
+    try {
+        // Get list of stores and try fetching orders per store; skip stores returning 403
+        const storesResp = await APIHelper.get(API_CONFIG.ENDPOINTS.STORES);
+        const stores = Array.isArray(storesResp?.result) ? storesResp.result : (Array.isArray(storesResp) ? storesResp : []);
+        const ownedStoreOrders = [];
+        let ownedStoresCount = 0;
+        for (const s of stores) {
+            try {
+                const r = await APIHelper.get(API_CONFIG.ENDPOINTS.ORDERS_BY_STORE(s.id));
+                const orders = Array.isArray(r?.result) ? r.result : (Array.isArray(r) ? r : []);
+                ownedStoreOrders.push(...orders);
+                ownedStoresCount += 1;
+            } catch (e) {
+                if (e && e.status === 403) {
+                    // not owned; ignore
+                } else {
+                    console.warn('Fetch orders for store failed', s?.id, e);
+                }
+            }
+        }
+
+        // Render stats (only using allowed orders)
+        document.getElementById('totalOrders').textContent = ownedStoreOrders.length;
+
+        // Products: show total available products (not scoped) — or skip if needed
+        try {
+            const productsRes = await api.getProducts();
+            const products = productsRes.result || [];
+            document.getElementById('totalProducts').textContent = products.length;
+        } catch (_) {
+            document.getElementById('totalProducts').textContent = '—';
+        }
+
+        // Revenue: sum only PAID orders in owned stores
+        const totalRevenue = ownedStoreOrders
+            .filter(o => o.paymentStatus === 'PAID')
+            .reduce((sum, o) => sum + (o.totalPayable || o.totalAmount || 0), 0);
+        document.getElementById('totalRevenue').textContent = formatPrice(totalRevenue);
+
+        // Stores: number of accessible (owned) stores
+        document.getElementById('totalStores').textContent = ownedStoresCount;
+
+        // Recent orders preview (top 5 by createdAt desc if available)
+        const recent = [...ownedStoreOrders].sort((a, b) => {
+            const ta = new Date(a.createdAt || 0).getTime();
+            const tb = new Date(b.createdAt || 0).getTime();
+            return tb - ta;
+        }).slice(0, 5);
+        loadRecentOrders(recent);
+    } catch (error) {
+        console.error('Error loading owner dashboard:', error);
+        // Fallback to zeros if needed
+        document.getElementById('totalOrders').textContent = '0';
+        document.getElementById('totalRevenue').textContent = formatPrice(0);
+    }
 }
 
 // --- Geocoding and Map (Leaflet) helpers for Store Address ---
@@ -304,6 +427,223 @@ function initAdminUI() {
     setupButtons();
 }
 
+// Basic section switcher if missing
+function switchSection(section) {
+    try {
+        document.querySelectorAll('.admin-section').forEach(sec => sec.classList.remove('active'));
+        const el = document.getElementById(`section-${section}`);
+        if (el) el.classList.add('active');
+        document.querySelectorAll('.sidebar-link').forEach(a => {
+            a.classList.toggle('active', a.dataset.section === section);
+        });
+        if (section === 'kitchen') {
+            // lazy refresh when opening kitchen
+            loadKitchenStoresAndQueue();
+        }
+    } catch (e) {
+        console.warn('switchSection error', e);
+    }
+}
+
+// --- Kitchen (Store accept/reject) ---
+async function setupKitchenSection() {
+    const filter = document.getElementById('kitchenStoreFilter');
+    const reload = document.getElementById('kitchenReloadBtn');
+    if (!filter || !reload) return; // section not visible in DOM
+
+    reload.addEventListener('click', () => {
+        const storeId = filter.value ? Number(filter.value) : null;
+        if (storeId) loadKitchenQueue(storeId); else loadKitchenStoresAndQueue();
+    });
+
+    // Track last successful, authorized store to revert on 403
+    if (typeof window.lastKitchenStoreId === 'undefined') {
+        window.lastKitchenStoreId = null;
+    }
+
+    filter.addEventListener('change', async () => {
+        const storeId = filter.value ? Number(filter.value) : null;
+        if (!storeId) return;
+        try {
+            // Probe authorization first to avoid rendering with 403
+            await APIHelper.get(API_CONFIG.ENDPOINTS.KITCHEN_QUEUE(storeId));
+            window.lastKitchenStoreId = storeId;
+            await loadKitchenQueue(storeId);
+        } catch (e) {
+            if (e && e.status === 403) {
+                Toast.warning('Bạn chỉ có quyền xem dữ liệu cửa hàng của bạn. Đã quay về lựa chọn trước.');
+                if (window.lastKitchenStoreId) {
+                    filter.value = String(window.lastKitchenStoreId);
+                    try { await loadKitchenQueue(window.lastKitchenStoreId); } catch(_) {}
+                }
+                return;
+            }
+            console.warn('Kitchen store switch failed', e);
+            Toast.error(e.message || 'Không thể tải hàng chờ bếp');
+            if (window.lastKitchenStoreId) {
+                filter.value = String(window.lastKitchenStoreId);
+            }
+        }
+    });
+
+    // initial load
+    await loadKitchenStoresAndQueue();
+}
+
+async function loadKitchenStoresAndQueue() {
+    try {
+        const res = await APIHelper.get(API_CONFIG.ENDPOINTS.STORES);
+        let stores = (res && res.result) || [];
+        const filter = document.getElementById('kitchenStoreFilter');
+        if (!filter) return;
+
+        // If STORE_OWNER (not admin), restrict to owned stores to avoid 403 spam
+        const flags = window.ADMIN_FLAGS || {};
+        if (flags.hasStoreOwner && !flags.hasAdmin) {
+            const ownedIds = await getOwnedStoreIds();
+            stores = stores.filter(s => ownedIds.includes(s.id));
+        }
+
+        if (!stores.length) {
+            filter.innerHTML = '';
+            document.getElementById('kitchenQueueTable').innerHTML = `<tr><td colspan="6" style="text-align:center; color:#6B7280;">Không có cửa hàng được phép truy cập</td></tr>`;
+            return;
+        }
+
+        filter.innerHTML = stores.map(s => `<option value="${s.id}">${s.name || ('Store ' + s.id)}</option>`).join('');
+
+        // Pick the first allowed store and load its queue
+        const firstId = stores[0].id;
+        filter.value = String(firstId);
+        try {
+            await APIHelper.get(API_CONFIG.ENDPOINTS.KITCHEN_QUEUE(firstId));
+            window.lastKitchenStoreId = firstId;
+            await loadKitchenQueue(firstId);
+        } catch (e) {
+            if (e && e.status === 403) {
+                // Extremely unlikely because we filtered, but guard anyway
+                Toast.warning('Bạn không có quyền truy cập cửa hàng đã chọn.');
+                document.getElementById('kitchenQueueTable').innerHTML = `<tr><td colspan="6" style="text-align:center; color:#6B7280;">Không có dữ liệu</td></tr>`;
+            } else {
+                throw e;
+            }
+        }
+    } catch (e) {
+        console.warn('loadKitchenStores failed', e);
+        document.getElementById('kitchenQueueTable').innerHTML = `<tr><td colspan="6" style="text-align:center; color:#ef4444;">Không tải được danh sách cửa hàng</td></tr>`;
+    }
+}
+
+async function loadKitchenQueue(storeId) {
+    try {
+        const res = await APIHelper.get(API_CONFIG.ENDPOINTS.KITCHEN_QUEUE(storeId));
+        const orders = (res && res.result) || [];
+        renderKitchenQueue(orders);
+    } catch (e) {
+        console.warn('loadKitchenQueue error', e);
+        document.getElementById('kitchenQueueTable').innerHTML = `<tr><td colspan="6" style="text-align:center; color:#ef4444;">Không tải được hàng chờ bếp</td></tr>`;
+    }
+}
+
+function renderKitchenQueue(orders) {
+    const tbody = document.getElementById('kitchenQueueTable');
+    if (!tbody) return;
+    if (!orders.length) {
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#6B7280;">Không có đơn nào trong hàng chờ</td></tr>`;
+        return;
+    }
+    tbody.innerHTML = orders.map(o => {
+        const canAccept = o.status === 'PAID';
+        const canKitchenComplete = o.status === 'PREPARING' || o.status === 'ACCEPT';
+        const actions = canAccept
+            ? `<button class="btn btn-primary btn-sm" onclick="kitchenAccept(this, ${o.id})" title="Nhận đơn"><i class=\"fas fa-check\"></i> Nhận đơn</button>
+               <button class="btn btn-outline btn-sm" onclick="kitchenReject(this, ${o.id})" title="Từ chối"><i class=\"fas fa-times\"></i> Từ chối</button>`
+            : (canKitchenComplete
+                ? `<button class="btn btn-success btn-sm" onclick="kitchenComplete(this, ${o.id})" title="Hoàn thành món"><i class=\"fas fa-utensils\"></i> Hoàn thành món</button>`
+                : '');
+        
+        return `
+            <tr>
+                <td><strong>${o.orderCode || ('ORD' + o.id)}</strong></td>
+                <td>${o.customerName || '-'}</td>
+                <td>${FormatHelper.date(o.createdAt)}</td>
+                <td><span class="status-badge ${getStatusClass(o.status)}">${getStatusText(o.status)}</span></td>
+                <td>${FormatHelper.currency(o.totalPayable || 0)}</td>
+                <td style="white-space:nowrap; display:flex; gap:.5rem;">${actions}</td>
+            </tr>`;
+    }).join('');
+}
+
+async function kitchenAccept(btn, orderId) {
+    try {
+        if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Đang nhận...'; }
+        const filter = document.getElementById('kitchenStoreFilter');
+        const storeId = filter && filter.value ? Number(filter.value) : null;
+        await APIHelper.post(API_CONFIG.ENDPOINTS.ORDER_ACCEPT(orderId), {});
+        // Optimistic UI: update row status and actions immediately
+        const row = btn ? btn.closest('tr') : null;
+        if (row) {
+            const statusEl = row.querySelector('.status-badge');
+            if (statusEl) {
+                statusEl.className = `status-badge ${getStatusClass('PREPARING')}`;
+                statusEl.textContent = getStatusText('PREPARING');
+            }
+            const actionsCell = row.querySelector('td:last-child');
+            if (actionsCell) {
+                actionsCell.innerHTML = `<button class="btn btn-success btn-sm" onclick="kitchenComplete(this, ${orderId})" title="Hoàn thành món"><i class=\"fas fa-utensils\"></i> Hoàn thành món</button>`;
+            }
+        }
+        Toast.success('Đã nhận đơn. Bắt đầu chuẩn bị.');
+        if (storeId) loadKitchenQueue(storeId);
+    } catch (e) {
+        console.warn('kitchenAccept failed', e);
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-check"></i> Nhận đơn'; }
+        Toast.error(e.message || 'Không thể nhận đơn');
+    }
+}
+
+async function kitchenReject(btn, orderId) {
+    try {
+        const reason = prompt('Lý do từ chối (tuỳ chọn)');
+        const filter = document.getElementById('kitchenStoreFilter');
+        const storeId = filter && filter.value ? Number(filter.value) : null;
+        if (btn) { btn.disabled = true; }
+        await APIHelper.post(API_CONFIG.ENDPOINTS.ORDER_REJECT(orderId, reason || ''), {});
+        Toast.success('Đã từ chối đơn.');
+        if (storeId) loadKitchenQueue(storeId);
+    } catch (e) {
+        console.warn('kitchenReject failed', e);
+        Toast.error(e.message || 'Không thể từ chối đơn');
+    }
+}
+
+// expose handlers for inline onclick
+window.kitchenAccept = kitchenAccept;
+window.kitchenReject = kitchenReject;
+async function kitchenComplete(btn, orderId) {
+    try {
+        if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Đang gửi...'; }
+        const filter = document.getElementById('kitchenStoreFilter');
+        const storeId = filter && filter.value ? Number(filter.value) : null;
+        await APIHelper.post(API_CONFIG.ENDPOINTS.ORDER_KITCHEN_COMPLETE(orderId), {});
+        // Optimistic UI: remove the button since preparation is completed
+        const row = btn ? btn.closest('tr') : null;
+        if (row) {
+            const actionsCell = row.querySelector('td:last-child');
+            if (actionsCell) {
+                actionsCell.innerHTML = `<span class="status-badge ${getStatusClass('PAID')}">Đã gửi bếp</span>`;
+            }
+        }
+        Toast.success('Đã hoàn thành món. Đang tạo giao hàng.');
+        if (storeId) loadKitchenQueue(storeId);
+    } catch (e) {
+        console.warn('kitchenComplete failed', e);
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-utensils"></i> Hoàn thành món'; }
+        Toast.error(e.message || 'Không thể hoàn thành món');
+    }
+}
+window.kitchenComplete = kitchenComplete;
+
 // Switch section
 function switchSection(sectionName) {
     // Update sidebar active state
@@ -340,12 +680,107 @@ function loadSectionData(sectionName) {
         case 'orders':
             loadOrders();
             break;
+        case 'kitchen':
+            loadKitchen();
+            break;
         case 'users':
             loadUsers();
             break;
         case 'drones':
             loadDrones();
             break;
+    }
+}
+
+// ------- Kitchen (Bếp) -------
+async function ensureKitchenFilters() {
+    const storeSel = document.getElementById('kitchenStoreFilter');
+    if (storeSel && !storeSel.dataset.filled) {
+        try {
+            const storesRes = await api.getStores();
+            const stores = storesRes.result || [];
+            storeSel.innerHTML = '<option value="">Chọn cửa hàng</option>' + stores.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+            storeSel.dataset.filled = 'true';
+            storeSel.addEventListener('change', () => loadKitchen());
+        } catch (_) { /* ignore */ }
+    }
+    const statusSel = document.getElementById('kitchenStatusFilter');
+    statusSel?.addEventListener('change', () => loadKitchen());
+    const btn = document.getElementById('kitchenRefreshBtn');
+    btn?.addEventListener('click', () => loadKitchen());
+}
+
+async function loadKitchen() {
+    await ensureKitchenFilters();
+    const tbody = document.getElementById('kitchenTableBody');
+    const storeId = document.getElementById('kitchenStoreFilter')?.value;
+    const status = document.getElementById('kitchenStatusFilter')?.value;
+    if (!storeId) {
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center">Chọn cửa hàng để xem đơn</td></tr>';
+        return;
+    }
+    try {
+        const endpoint = API_CONFIG.ENDPOINTS.KITCHEN_QUEUE(storeId, status || undefined);
+        const res = await APIHelper.get(endpoint);
+        const orders = Array.isArray(res?.result) ? res.result : (Array.isArray(res) ? res : []);
+        if (!orders.length) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center">Không có đơn cần xử lý</td></tr>';
+            return;
+        }
+        tbody.innerHTML = orders.map(o => {
+            const canAccept = (o.paymentStatus === 'PAID' && o.status === 'PAID');
+            const canReject = (o.paymentStatus === 'PAID' && (o.status === 'PAID' || o.status === 'ACCEPT' || o.status === 'PREPARING'));
+            const canKitchenComplete = (o.paymentStatus === 'PAID' && (o.status === 'PREPARING' || o.status === 'ACCEPT'));
+            return `
+            <tr>
+                <td>${o.orderCode || ('#'+o.id)}</td>
+                <td>${formatPrice(o.totalPayable || o.totalAmount || 0)}</td>
+                <td><span class="status-badge ${getStatusClass(o.status)}">${getStatusText(o.status)}</span></td>
+                <td>${o.createdAt ? new Date(o.createdAt).toLocaleString('vi-VN') : ''}</td>
+                <td>
+                    <div class="action-buttons">
+                        ${canAccept ? `<button class="action-btn approve" title="Nhận đơn" onclick="kitchenAccept(this, ${o.id})"><i class="fas fa-check"></i></button>` : ''}
+                        ${canReject ? `<button class="action-btn reject" title="Từ chối" onclick="kitchenReject(this, ${o.id})"><i class="fas fa-times"></i></button>` : ''}
+                        ${canKitchenComplete ? `<button class="action-btn success" title="Hoàn thành món" onclick="kitchenComplete(this, ${o.id})"><i class="fas fa-utensils"></i></button>` : ''}
+                        <button class="action-btn info" title="Chi tiết" onclick="adminViewOrder(${o.id})"><i class="fas fa-info-circle"></i></button>
+                    </div>
+                </td>
+            </tr>`;
+        }).join('');
+    } catch (e) {
+        console.error('Load kitchen failed', e);
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center">Lỗi tải dữ liệu</td></tr>';
+    }
+}
+
+// View order detail modal from Kitchen
+async function adminViewOrder(orderId) {
+    try {
+        // Prefer APIService for typed endpoints if available
+        let orderData;
+        try {
+            const endpoint = (typeof API_CONFIG?.ENDPOINTS?.ORDER_BY_ID === 'function')
+                ? API_CONFIG.ENDPOINTS.ORDER_BY_ID(orderId)
+                : `/api/v1/orders/${orderId}`;
+            const res = await APIHelper.get(endpoint);
+            orderData = res?.result || res;
+        } catch (_) {
+            orderData = null;
+        }
+
+        let deliveryData = null;
+        try {
+            const dEndpoint = (typeof API_CONFIG?.ENDPOINTS?.DELIVERY_BY_ORDER === 'function')
+                ? API_CONFIG.ENDPOINTS.DELIVERY_BY_ORDER(orderId)
+                : `/api/v1/deliveries/order/${orderId}`;
+            const dRes = await APIHelper.get(dEndpoint);
+            deliveryData = dRes?.result || dRes;
+        } catch (_) { /* delivery may not exist yet */ }
+
+        renderAdminOrderModal(orderData, deliveryData);
+        showModalById('adminOrderModal');
+    } catch (e) {
+        Toast.show('Không thể tải chi tiết đơn', 'error');
     }
 }
 
@@ -419,7 +854,13 @@ async function loadProducts() {
         try {
             const storesRes = await api.getStores();
             const stores = storesRes.result || [];
-            storeFilter.innerHTML = '<option value="">Tất cả cửa hàng</option>' + stores.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+            const flags = window.ADMIN_FLAGS || {};
+            let allowedStores = stores;
+            if (flags.hasStoreOwner && !flags.hasAdmin) {
+                const ownedIds = await getOwnedStoreIds();
+                allowedStores = stores.filter(s => ownedIds.includes(s.id));
+            }
+            storeFilter.innerHTML = '<option value="">Tất cả cửa hàng</option>' + (allowedStores.map(s => `<option value="${s.id}">${s.name}</option>`).join(''));
             storeFilter.dataset.filled = 'true';
             storeFilter.addEventListener('change', () => loadProducts());
         } catch (_) { /* ignore */ }
@@ -428,6 +869,11 @@ async function loadProducts() {
     try {
         const response = await api.getProducts();
         let products = response.result || [];
+        const flags = window.ADMIN_FLAGS || {};
+        if (flags.hasStoreOwner && !flags.hasAdmin) {
+            const ownedIds = await getOwnedStoreIds();
+            products = products.filter(p => ownedIds.includes(p.storeId));
+        }
         const selectedStore = document.getElementById('productStoreFilter')?.value || '';
         if (selectedStore) {
             products = products.filter(p => String(p.storeId || '') === String(selectedStore));
@@ -475,7 +921,20 @@ async function loadCategories() {
 
     try {
         const response = await api.getCategories();
-        const categories = response.result || [];
+        let categories = response.result || [];
+        const flags = window.ADMIN_FLAGS || {};
+        if (flags.hasStoreOwner && !flags.hasAdmin) {
+            // Filter categories to those used by products in owner stores
+            try {
+                const prodRes = await api.getProducts();
+                const products = prodRes.result || [];
+                const ownedIds = await getOwnedStoreIds();
+                const usedCategoryIds = new Set(products.filter(p => ownedIds.includes(p.storeId)).map(p => p.categoryId));
+                categories = categories.filter(c => usedCategoryIds.has(c.id));
+            } catch (e) {
+                console.warn('Filter categories by owned products failed', e);
+            }
+        }
 
         if (categories.length === 0) {
             tbody.innerHTML = '<tr><td colspan="5" class="text-center">Không có danh mục</td></tr>';
@@ -553,9 +1012,31 @@ async function loadStores() {
 async function loadOrders() {
     const tbody = document.getElementById('ordersTableBody');
     try {
-        const response = await api.getAllOrders();
-        // Some APIs wrap result differently; fall back to response if result missing
-        const orders = Array.isArray(response?.result) ? response.result : (Array.isArray(response) ? response : []);
+        let orders = [];
+        const flags = window.ADMIN_FLAGS || {};
+        if (flags.hasAdmin) {
+            const response = await api.getAllOrders();
+            orders = Array.isArray(response?.result) ? response.result : (Array.isArray(response) ? response : []);
+        } else if (flags.hasStoreOwner) {
+            // Aggregate orders from stores the owner is authorized to access
+            const storesResp = await APIHelper.get(API_CONFIG.ENDPOINTS.STORES);
+            const stores = Array.isArray(storesResp?.result) ? storesResp.result : (Array.isArray(storesResp) ? storesResp : []);
+            const all = [];
+            for (const s of stores) {
+                try {
+                    const r = await APIHelper.get(API_CONFIG.ENDPOINTS.ORDERS_BY_STORE(s.id));
+                    const os = Array.isArray(r?.result) ? r.result : (Array.isArray(r) ? r : []);
+                    all.push(...os);
+                } catch (e) {
+                    if (e && e.status === 403) {
+                        // not owned; ignore
+                    } else {
+                        console.warn('Fetch orders for store failed', s?.id, e);
+                    }
+                }
+            }
+            orders = all;
+        }
 
         if (orders.length === 0) {
             tbody.innerHTML = '<tr><td colspan="6" class="text-center">Không có đơn hàng</td></tr>';
@@ -621,6 +1102,7 @@ async function loadDrones() {
             const battery = d.currentBatteryPercent != null ? d.currentBatteryPercent + '%' : 'N/A';
             const loc = (d.lastLatitude != null && d.lastLongitude != null) ? `${d.lastLatitude}, ${d.lastLongitude}` : '';
             const telemetry = d.lastTelemetryAt ? new Date(d.lastTelemetryAt).toLocaleString('vi-VN') : '';
+            const canCharge = (d.currentBatteryPercent == null) || (Number(d.currentBatteryPercent) < 100);
             return `<tr>
                 <td>${d.id}</td>
                 <td>${d.code}</td>
@@ -633,14 +1115,26 @@ async function loadDrones() {
                 <td>
                     <div class="action-buttons drone-actions">
                         <button class="action-btn success" onclick="setDroneAvailable('${d.code}')" title="Đặt sẵn sàng (AVAILABLE)"><i class="fas fa-check-circle"></i></button>
-                        <button class="action-btn warning" onclick="returnDroneToStation('${d.code}')" title="Đưa về trạm sạc (CHARGING)"><i class="fas fa-charging-station"></i></button>
+                        <button class="action-btn warning" ${canCharge?'' : 'disabled'} onclick="returnDroneToStation('${d.code}')" title="${canCharge ? 'Đưa về trạm sạc (CHARGING)' : 'Pin đã đầy'}"><i class="fas fa-charging-station"></i></button>
                         <button class="action-btn purple" onclick="setDroneMaintenance('${d.code}')" title="Bảo trì (MAINTENANCE)"><i class="fas fa-screwdriver-wrench"></i></button>
-                        <button class="action-btn" onclick="simulateDroneBattery('${d.code}')" title="Kiểm tra pin"><i class="fas fa-battery-half"></i></button>
+                        <!-- simulateDroneBattery button removed -->
+                        <!-- Demo giảm pin button removed -->
                         <button class="action-btn danger" onclick="confirmDeleteDrone('${d.code}')" title="Xóa drone"><i class="fas fa-trash"></i></button>
                     </div>
                 </td>
             </tr>`;
         }).join('');
+
+        // Auto-refresh while any drone is charging to reflect gradual battery changes
+        try {
+            if (drones.some(d => String(d.status) === 'CHARGING')) {
+                if (window.__droneChargeTimer) clearTimeout(window.__droneChargeTimer);
+                window.__droneChargeTimer = setTimeout(loadDrones, 1500);
+            } else if (window.__droneChargeTimer) {
+                clearTimeout(window.__droneChargeTimer);
+                window.__droneChargeTimer = null;
+            }
+        } catch (_) { /* ignore */ }
     } catch (e) {
         console.error('Error loading drones', e);
         tbody.innerHTML = '<tr><td colspan="9" class="text-center">Lỗi tải dữ liệu</td></tr>';
@@ -718,20 +1212,40 @@ window.openUpdateDroneLocation = function(code) {
         .catch(err => showNotification('Lỗi cập nhật vị trí: ' + (err.message||'Lỗi'), 'error'));
 };
 
-window.simulateDroneBattery = function(code) {
-    APIHelper.post(`/drones/${code}/monitor-battery`, {})
-        .then(() => { showNotification('Đã kiểm tra pin / cập nhật trạng thái nếu cần', 'info'); loadDrones(); })
-        .catch(err => showNotification('Lỗi kiểm tra pin: ' + (err.message||'Lỗi'), 'error'));
-};
+// simulateDroneBattery helper removed
+
+// Demo helper setDroneBattery removed
 
 // Convenience actions with single shared station
 window.returnDroneToStation = function(code) {
-    const { lat, lng } = window.DRONE_STATION || { lat: 10.776, lng: 106.7 };
-    // Update location then status -> CHARGING
-    APIHelper.post(`/drones/${code}/location`, { latitude: lat, longitude: lng })
-        .then(() => APIHelper.post(`/drones/${code}/status`, { status: 'CHARGING' }))
-        .then(() => { showNotification('Đã đưa drone về trạm sạc', 'success'); loadDrones(); })
-        .catch(err => showNotification('Không thể đưa về trạm: ' + (err.message||'Lỗi'), 'error'));
+    // If pin đã đầy, không cần sạc
+    APIHelper.get(API_CONFIG.ENDPOINTS.DRONE_BY_CODE(code))
+        .then(resp => resp?.result || resp)
+        .then(d => {
+            const lvl = Number(d?.currentBatteryPercent ?? 100);
+            if (isFinite(lvl) && lvl >= 100) {
+                showNotification('Pin đã đầy, không cần sạc', 'info');
+                return Promise.resolve('skip');
+            }
+            // Prefer backend convenience endpoint; fallback to legacy two-step
+            return APIHelper.post(`/drones/${code}/return-to-station`, {})
+                .then(() => 'ok')
+                .catch(() => {
+                    const { lat, lng } = window.DRONE_STATION || { lat: 10.776, lng: 106.7 };
+                    return APIHelper.post(`/drones/${code}/location`, { latitude: lat, longitude: lng })
+                        .then(() => APIHelper.post(`/drones/${code}/status`, { status: 'CHARGING' }))
+                        .then(() => 'ok');
+                });
+        })
+        .then(flag => {
+            if (flag !== 'skip') {
+                showNotification('Đã đưa drone về trạm sạc', 'success');
+                loadDrones();
+                // Schedule a second refresh soon to show battery increments
+                setTimeout(loadDrones, 1200);
+            }
+        })
+        .catch(err => showNotification('Không thể đưa về trạm: ' + (err?.message||'Lỗi'), 'error'));
 };
 
 window.setDroneAvailable = function(code) {
@@ -1338,7 +1852,12 @@ async function loadStoresForDropdown() {
     const select = document.getElementById('productStoreId');
     try {
         const response = await api.getStores();
-        const stores = response.result || [];
+        let stores = response.result || [];
+        const flags = window.ADMIN_FLAGS || {};
+        if (flags.hasStoreOwner && !flags.hasAdmin) {
+            const ownedIds = await getOwnedStoreIds();
+            stores = stores.filter(s => ownedIds.includes(s.id));
+        }
         select.innerHTML = '<option value="">Chọn cửa hàng</option>' +
             stores.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
     } catch (e) {
@@ -1773,6 +2292,7 @@ function getStatusText(status) {
         'CREATED': 'Tạo mới',
         'PENDING_PAYMENT': 'Chờ thanh toán',
         'PAID': 'Đã thanh toán',
+        'PREPARING': 'Đang chuẩn bị',
         'IN_DELIVERY': 'Đang giao',
         'DELIVERED': 'Đã giao',
         'CANCELLED': 'Hủy',
@@ -1810,6 +2330,7 @@ function getStatusClass(status) {
         case 'CONFIRMED':
         case 'PAID':
         case 'ACCEPT':
+        case 'PREPARING':
         case 'ASSIGNED':
         case 'AVAILABLE':
             return 'xac-nhan';
@@ -1863,6 +2384,22 @@ function showNotification(message, type = 'info') {
     document.body.appendChild(notification);
 
     setTimeout(() => notification.remove(), 3000);
+}
+
+// Hàm bổ sung để sửa lỗi ReferenceError
+function getOrderStatusClass(status) {
+    // Nếu muốn dùng chung logic với hàm cũ:
+    return getStatusClass(status);
+
+    /* HOẶC nếu muốn màu riêng cho bếp (Bootstrap classes):
+    const s = String(status || '').toUpperCase();
+    switch (s) {
+        case 'PAID': return 'badge badge-info';
+        case 'ACCEPT': return 'badge badge-primary';
+        case 'CANCELLED': return 'badge badge-danger';
+        default: return 'badge badge-secondary';
+    }
+    */
 }
 
 // Debug snippet removed (unsafe when token missing)

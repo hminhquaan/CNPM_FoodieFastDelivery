@@ -15,6 +15,11 @@ public interface OrderService {
     List<OrderResponse> createOrdersFromCart(String username);
 
     /**
+     * Create new orders from authenticated user's cart with optional dropoff override
+     */
+    List<OrderResponse> createOrdersFromCart(String username, dto.request.order.CreateOrdersRequest request);
+
+    /**
      * Get order by ID
      */
     OrderResponse getOrderById(Long orderId);
@@ -33,6 +38,12 @@ public interface OrderService {
      * Get all orders by store
      */
     List<OrderResponse> getOrdersByStoreId(Long storeId);
+
+    /**
+     * Get kitchen queue for a store (paid orders awaiting preparation)
+        * Default statuses: PAID, PREPARING (and legacy ACCEPT). Optional filter to a single status.
+     */
+    List<OrderResponse> getKitchenQueue(Long storeId, OrderStatus statusFilter);
 
     /**
      * Get all orders (admin use)
@@ -55,6 +66,11 @@ public interface OrderService {
     OrderResponse acceptOrder(Long orderId);
 
     /**
+     * Kitchen marks order as prepared; triggers delivery creation/dispatch
+     */
+    OrderResponse kitchenComplete(Long orderId);
+
+    /**
      * Store rejects order
      */
     OrderResponse rejectOrder(Long orderId, String reason);
@@ -68,6 +84,12 @@ public interface OrderService {
      * Update order to DELIVERED status
      */
     OrderResponse markAsDelivered(Long orderId);
+
+    /**
+     * Force delete an order and its related data (delivery, items, payment transactions).
+     * Use with caution. Intended for admin/cleanup scenarios.
+     */
+    void hardDeleteOrder(Long orderId);
 
     /**
      * Update quantity of an item in order

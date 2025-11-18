@@ -1,6 +1,7 @@
 package service.order;
 
 import dto.request.order.UpdateOrderStatusRequest;
+import dto.request.order.CreateOrdersRequest;
 import dto.response.order.OrderItemResponse;
 import dto.response.order.OrderResponse;
 import entity.*;
@@ -18,6 +19,10 @@ import repository.cart.CartItemRepository;
 import repository.user.UserRepository;
 import repository.user.UserAddressRepository;
 import service.payment.LedgerService;
+import repository.delivery.DeliveryRepository;
+import repository.payment.PaymentTransactionRepository;
+import service.delivery.DeliveryService;
+import dto.request.delivery.CreateDeliveryRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -41,11 +46,21 @@ public class OrderServiceImpl implements OrderService {
     private final CartItemRepository cartItemRepository;
     private final UserRepository userRepository;
     private final LedgerService ledgerService;
+    private final DeliveryService deliveryService;
     private final UserAddressRepository userAddressRepository;
+    private final DeliveryRepository deliveryRepository;
+    private final PaymentTransactionRepository paymentTransactionRepository;
 
     @Override
     @Transactional
     public List<OrderResponse> createOrdersFromCart(String username) {
+        // Backward-compat: no override provided
+        return createOrdersFromCart(username, null);
+    }
+
+    @Override
+    @Transactional
+    public List<OrderResponse> createOrdersFromCart(String username, CreateOrdersRequest override) {
         log.info("Creating orders from cart for authenticated user: {}", username);
 
         try {
@@ -91,8 +106,8 @@ public class OrderServiceImpl implements OrderService {
                 BigDecimal totalItemAmount = BigDecimal.ZERO;
 
                 // Tạo Order entity
-        // Snapshot default user address (lat/lng) for delivery planning
-        String addressSnapshotJson = buildAddressSnapshot(userId);
+            // Snapshot delivery address: use override if provided, otherwise default user's address
+            String addressSnapshotJson = buildAddressSnapshotWithOverride(userId, override);
 
         Order order = Order.builder()
                         .userId(userId)
@@ -199,6 +214,51 @@ public class OrderServiceImpl implements OrderService {
         }
     }
 
+    private String buildAddressSnapshotWithOverride(Long userId, CreateOrdersRequest override) {
+        try {
+            if (override != null) {
+                // Saved addressId takes precedence if provided
+                if (override.getAddressId() != null) {
+                    var addrOpt = userAddressRepository.findById(override.getAddressId());
+                    if (addrOpt.isPresent() && addrOpt.get().getUser() != null &&
+                            Objects.equals(addrOpt.get().getUser().getId(), userId)) {
+                        var addr = addrOpt.get();
+                        String full = safe(addr.getAddressLine()) + (addr.getWard()!=null? (", "+addr.getWard()):"")
+                                + (addr.getDistrict()!=null? (", "+addr.getDistrict()):"")
+                                + (addr.getCity()!=null? (", "+addr.getCity()):"");
+                        String lat = addr.getLatitude() != null ? addr.getLatitude().toPlainString() : null;
+                        String lng = addr.getLongitude() != null ? addr.getLongitude().toPlainString() : null;
+                        StringBuilder sb = new StringBuilder("{");
+                        sb.append("\"label\":\"").append(safe(addr.getLabel())).append("\",");
+                        sb.append("\"fullAddress\":\"").append(full.replace("\"","\\\"")).append("\"");
+                        if (lat != null && lng != null) {
+                            sb.append(",\"lat\":").append(lat).append(",\"lng\":").append(lng);
+                        }
+                        sb.append("}");
+                        return sb.toString();
+                    } else {
+                        log.warn("AddressId {} not found or not owned by user {}. Ignoring.", override.getAddressId(), userId);
+                    }
+                }
+                // Custom lat/lng override
+                if (override.getLat() != null && override.getLng() != null) {
+                    StringBuilder sb = new StringBuilder("{");
+                    String label = override.getLabel() != null ? override.getLabel() : "Dropoff";
+                    String full = override.getFullAddress() != null ? override.getFullAddress() : "Custom location";
+                    sb.append("\"label\":\"").append(safe(label)).append("\",");
+                    sb.append("\"fullAddress\":\"").append(safe(full)).append("\",");
+                    sb.append("\"lat\":").append(override.getLat()).append(",\"lng\":").append(override.getLng());
+                    sb.append("}");
+                    return sb.toString();
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed building override address snapshot: {}", e.getMessage());
+        }
+        // Fallback to default address
+        return buildAddressSnapshot(userId);
+    }
+
     private String safe(String s) { return s==null? "" : s.replace("\"","\\\""); }
 
     @Override
@@ -217,7 +277,7 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public List<OrderResponse> getOrdersByUserId(Long userId) {
-        List<Order> orders = orderRepository.findByUserId(userId);
+        List<Order> orders = orderRepository.findByUserIdOrderByCreatedAtDesc(userId);
         return orders.stream()
                 .map(this::buildOrderResponse)
                 .collect(Collectors.toList());
@@ -226,6 +286,20 @@ public class OrderServiceImpl implements OrderService {
     @Override
     public List<OrderResponse> getOrdersByStoreId(Long storeId) {
         List<Order> orders = orderRepository.findByStoreId(storeId);
+        return orders.stream()
+                .map(this::buildOrderResponse)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<OrderResponse> getKitchenQueue(Long storeId, OrderStatus statusFilter) {
+        List<OrderStatus> statuses;
+        if (statusFilter != null) {
+            statuses = java.util.Collections.singletonList(statusFilter);
+        } else {
+            statuses = java.util.Arrays.asList(OrderStatus.PAID, OrderStatus.PREPARING, OrderStatus.ACCEPT);
+        }
+        List<Order> orders = orderRepository.findKitchenQueue(storeId, PaymentStatus.PAID, statuses);
         return orders.stream()
                 .map(this::buildOrderResponse)
                 .collect(Collectors.toList());
@@ -310,21 +384,58 @@ public class OrderServiceImpl implements OrderService {
             throw new BadRequestException("Order must be in PAID status to be accepted. Current status: " + order.getStatus());
         }
 
-        // Cập nhật trạng thái đơn hàng sang ACCEPT
-        order.setStatus(OrderStatus.ACCEPT);
+        // Sau khi cửa hàng chấp nhận, chuyển sang PREPARING (đang chế biến)
+        order.setStatus(OrderStatus.PREPARING);
         order.setUpdatedAt(LocalDateTime.now());
         order = orderRepository.save(order);
 
-        // Tự động tạo StoreLedger entry khi đơn hàng được ACCEPT
-        try {
-            ledgerService.createLedgerEntryForOrder(order);
-            log.info("StoreLedger created for accepted order: {}", orderId);
-        } catch (Exception e) {
-            log.error("Failed to create ledger entry for order {}: {}", orderId, e.getMessage());
-            throw new RuntimeException("Failed to create ledger entry", e);
+        log.info("Order {} accepted -> moved to PREPARING.", orderId);
+        return buildOrderResponse(order);
+    }
+
+    @Override
+    @Transactional
+    public OrderResponse kitchenComplete(Long orderId) {
+        log.info("Kitchen marking order {} as prepared; triggering delivery", orderId);
+
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
+
+        if (order.getPaymentStatus() != PaymentStatus.PAID) {
+            throw new BadRequestException("Only paid orders can be prepared. Payment status: " + order.getPaymentStatus());
         }
 
-        log.info("Order {} accepted (status = ACCEPT) and ledger created successfully", orderId);
+        if (order.getStatus() != OrderStatus.PREPARING && order.getStatus() != OrderStatus.ACCEPT) {
+            throw new BadRequestException("Order must be in PREPARING status to complete kitchen. Current status: " + order.getStatus());
+        }
+
+        // Create delivery if not exists; auto-assign will progress to flight
+        try {
+            boolean exists = false;
+            try {
+                deliveryService.getDeliveryByOrderId(order.getId());
+                exists = true;
+            } catch (Exception ignore) { /* not found -> create */ }
+
+            if (!exists) {
+                CreateDeliveryRequest dreq = CreateDeliveryRequest.builder()
+                        .orderId(order.getId())
+                        .pickupStoreId(order.getStoreId())
+                        .dropoffAddressSnapshot(order.getDeliveryAddressSnapshot())
+                        .build();
+                deliveryService.createDelivery(dreq);
+                log.info("Delivery created after kitchen complete for order: {}", orderId);
+            } else {
+                log.info("Delivery already exists for order: {} — skipping create", orderId);
+            }
+        } catch (Exception ex) {
+            log.warn("Delivery creation after kitchen complete skipped: {}", ex.getMessage());
+        }
+
+        // Keep order in PREPARING; DeliveryService will move it to IN_DELIVERY when flight launches
+        order.setUpdatedAt(LocalDateTime.now());
+        order = orderRepository.save(order);
+
         return buildOrderResponse(order);
     }
 
@@ -370,8 +481,8 @@ public class OrderServiceImpl implements OrderService {
         }
 
         // Kiểm tra trạng thái hiện tại
-        if (order.getStatus() != OrderStatus.PAID) {
-            throw new BadRequestException("Order must be in PAID status. Current: " + order.getStatus());
+        if (order.getStatus() != OrderStatus.PREPARING && order.getStatus() != OrderStatus.ACCEPT) {
+            throw new BadRequestException("Order must be in PREPARING status. Current: " + order.getStatus());
         }
 
         order.setStatus(OrderStatus.IN_DELIVERY);
@@ -408,6 +519,45 @@ public class OrderServiceImpl implements OrderService {
         return buildOrderResponse(order);
     }
 
+    @Override
+    @Transactional
+    public void hardDeleteOrder(Long orderId) {
+        log.warn("Force deleting order {} and related data", orderId);
+
+        // Delete delivery if exists
+        try {
+            var optDel = deliveryRepository.findByOrderId(orderId);
+            optDel.ifPresent(deliveryRepository::delete);
+        } catch (Exception e) {
+            log.warn("Delete delivery for order {} failed: {}", orderId, e.getMessage());
+        }
+
+        // Delete order items
+        try {
+            var items = orderItemRepository.findByOrderId(orderId);
+            if (items != null && !items.isEmpty()) {
+                orderItemRepository.deleteAll(items);
+            }
+        } catch (Exception e) {
+            log.warn("Delete order items for order {} failed: {}", orderId, e.getMessage());
+        }
+
+        // Delete payment transaction
+        try {
+            var txOpt = paymentTransactionRepository.findByOrderId(orderId);
+            txOpt.ifPresent(paymentTransactionRepository::delete);
+        } catch (Exception e) {
+            log.warn("Delete payment transaction for order {} failed: {}", orderId, e.getMessage());
+        }
+
+        // Finally delete order
+        try {
+            orderRepository.findById(orderId).ifPresent(orderRepository::delete);
+        } catch (Exception e) {
+            log.warn("Delete order {} failed: {}", orderId, e.getMessage());
+        }
+    }
+
     /**
      * Validate status transition logic
      */
@@ -420,8 +570,18 @@ public class OrderServiceImpl implements OrderService {
         // Logic chuyển đổi hợp lệ
         switch (currentStatus) {
             case PAID:
+                if (newStatus != OrderStatus.ACCEPT && newStatus != OrderStatus.PREPARING && newStatus != OrderStatus.CANCELLED) {
+                    throw new BadRequestException("PAID order can only be moved to ACCEPT, PREPARING or CANCELLED");
+                }
+                break;
+            case ACCEPT:
+                if (newStatus != OrderStatus.PREPARING && newStatus != OrderStatus.CANCELLED) {
+                    throw new BadRequestException("ACCEPT order can only be moved to PREPARING or CANCELLED");
+                }
+                break;
+            case PREPARING:
                 if (newStatus != OrderStatus.IN_DELIVERY && newStatus != OrderStatus.CANCELLED) {
-                    throw new BadRequestException("PAID order can only be moved to IN_DELIVERY or CANCELLED");
+                    throw new BadRequestException("PREPARING order can only be moved to IN_DELIVERY or CANCELLED");
                 }
                 break;
             case IN_DELIVERY:
@@ -493,6 +653,9 @@ public class OrderServiceImpl implements OrderService {
                 .shippingFee(order.getShippingFee())
                 .taxAmount(order.getTaxAmount())
                 .totalPayable(order.getTotalPayable())
+            .deliveryAddressSnapshot(order.getDeliveryAddressSnapshot())
+                .deliveredDroneId(order.getDeliveredDroneId())
+                .deliveredDroneCode(order.getDeliveredDroneCode())
                 .items(itemResponses)
                 .createdAt(order.getCreatedAt())
                 .updatedAt(order.getUpdatedAt())

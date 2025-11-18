@@ -3,6 +3,7 @@ package config.auth;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -12,7 +13,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
-@Configuration
+@Configuration(proxyBeanMethods = false)
 @EnableWebSecurity
 @EnableMethodSecurity
 @RequiredArgsConstructor
@@ -39,11 +40,17 @@ public class SecurityConfig {
             .csrf(csrf -> csrf.disable())
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
+                // Always allow preflight
+                .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 // Public endpoints
                 .requestMatchers("/auth/login", "/auth/refresh","/auth/signup","/auth/validate",
-                        "/products","/products/**",
-                        "/categories","/categories/**",
-                        "/stores","/stores/**",
+                    // Public GETs for catalog browsing; restrict mutating methods below
+                    "/products", "/products/**",
+                    "/categories", "/categories/**",
+                    "/stores","/stores/**",
+                    "/api/stores","/api/stores/**",
+                        // Payment return/IPN must be public for VNPAY callbacks and browser returns
+                        "/api/v1/payments/vnpay-return", "/api/v1/payments/vnpay-ipn",
                         "/location","/location/**",
                         "/storesaddresses","/storesaddresses/**",
                         "/drones","/drones/**").permitAll()
@@ -54,17 +61,30 @@ public class SecurityConfig {
                         "/*.html", "/*.css", "/*.js", "/*.png", "/*.jpg",
                         "/test-*.html", "/debug-*.html", "/drone-*.html", "/index.html").permitAll()
 
+                    // Cart requires authentication
+                    .requestMatchers("/api/cart/**").authenticated()
+
                         // Admin only endpoints
                         .requestMatchers("/users/getAllUser").hasRole("ADMIN")
                         .requestMatchers("/users/deleteUser/**").hasRole("ADMIN")
+
+                        // Product & Category write protections (POST/PUT/PATCH/DELETE)
+                        .requestMatchers(HttpMethod.POST, "/products/**").authenticated()
+                        .requestMatchers(HttpMethod.PUT, "/products/**").authenticated()
+                        .requestMatchers(HttpMethod.PATCH, "/products/**").authenticated()
+                        .requestMatchers(HttpMethod.DELETE, "/products/**").authenticated()
+
+                        .requestMatchers(HttpMethod.POST, "/categories/**").authenticated()
+                        .requestMatchers(HttpMethod.PUT, "/categories/**").authenticated()
+                        .requestMatchers(HttpMethod.PATCH, "/categories/**").authenticated()
+                        .requestMatchers(HttpMethod.DELETE, "/categories/**").authenticated()
 
                         // Authenticated user endpoints
                         .requestMatchers("/users/**").authenticated()
                         .requestMatchers("/auth/logout").authenticated()
 
                         // All other requests need authentication
-                       // .anyRequest().authenticated()
-                            .anyRequest().permitAll()
+                        .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 

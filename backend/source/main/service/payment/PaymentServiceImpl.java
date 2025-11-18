@@ -192,19 +192,7 @@ public class PaymentServiceImpl implements PaymentService {
                 order.setPaymentStatus(PaymentStatus.PAID);
                 order.setUpdatedAt(LocalDateTime.now());
 
-                log.info("Payment successful for order: {}", order.getOrderCode());
-
-                // Auto-create delivery record if not exists
-                try {
-                    CreateDeliveryRequest dreq = CreateDeliveryRequest.builder()
-                            .orderId(order.getId())
-                            .pickupStoreId(order.getStoreId())
-                            .dropoffAddressSnapshot(order.getDeliveryAddressSnapshot())
-                            .build();
-                    deliveryService.createDelivery(dreq);
-                } catch (Exception ex) {
-                    log.warn("Auto-create delivery skipped: {}", ex.getMessage());
-                }
+                log.info("Payment successful for order: {}. Awaiting store acceptance before delivery creation.", order.getOrderCode());
 
             } else {
 
@@ -295,19 +283,7 @@ public class PaymentServiceImpl implements PaymentService {
                 order.setPaymentStatus(PaymentStatus.PAID);
                 order.setUpdatedAt(LocalDateTime.now());
 
-                log.info("✓ Payment successful for order: {}", order.getOrderCode());
-
-                // Auto-create delivery record if not exists
-                try {
-                    CreateDeliveryRequest dreq = CreateDeliveryRequest.builder()
-                            .orderId(order.getId())
-                            .pickupStoreId(order.getStoreId())
-                            .dropoffAddressSnapshot(order.getDeliveryAddressSnapshot())
-                            .build();
-                    deliveryService.createDelivery(dreq);
-                } catch (Exception ex) {
-                    log.warn("Auto-create delivery skipped: {}", ex.getMessage());
-                }
+                log.info("✓ Payment successful for order: {}. Awaiting store acceptance before delivery creation.", order.getOrderCode());
 
             } else {
                 // Payment failed / cancelled

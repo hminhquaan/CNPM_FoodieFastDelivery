@@ -130,8 +130,18 @@
     <sourceDirectory>backend/source/main</sourceDirectory>
     <testSourceDirectory>backend/source/test</testSourceDirectory>
     <resources>
+      <!-- Support both historical and current resources locations -->
       <resource>
         <directory>backend/source/resources</directory>
+        <includes>
+          <include>**/*.properties</include>
+          <include>**/*.yml</include>
+          <include>**/*.yaml</include>
+          <include>**/*.sql</include>
+        </includes>
+      </resource>
+      <resource>
+        <directory>backend/resources</directory>
         <includes>
           <include>**/*.properties</include>
           <include>**/*.yml</include>
@@ -167,11 +177,16 @@
         <artifactId>spring-boot-maven-plugin</artifactId>
         <version>${spring.boot.version}</version>
         <configuration>
-          <!-- Ensure dev profile activates automatically when SPRING_PROFILES_ACTIVE not set -->
-          <profiles>
-            <profile>dev</profile>
-          </profiles>
+          <!-- Explicit main class since sources are in default package -->
+          <mainClass>AppMain</mainClass>
         </configuration>
+        <executions>
+          <execution>
+            <goals>
+              <goal>repackage</goal>
+            </goals>
+          </execution>
+        </executions>
       </plugin>
     </plugins>
   </build>

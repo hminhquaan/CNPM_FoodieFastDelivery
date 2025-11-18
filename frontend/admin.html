@@ -82,6 +82,10 @@
                 <i class="fas fa-shopping-bag"></i>
                 <span>Đơn hàng</span>
             </a>
+            <a href="#kitchen" class="sidebar-link" data-section="kitchen">
+                <i class="fas fa-kitchen-set"></i>
+                <span>Bếp</span>
+            </a>
             <a href="#drones" class="sidebar-link" data-section="drones">
                 <i class="fa-sharp fa-solid fa-drone"></i>
                 <span>Drone</span>
@@ -166,6 +170,37 @@
                     <h3>Đơn hàng gần đây</h3>
                     <div id="recentOrdersTable"></div>
                 </div>
+            </div>
+        </section>
+
+        <!-- Kitchen Section -->
+        <section id="section-kitchen" class="admin-section">
+            <div class="section-header">
+                <h1>Bếp</h1>
+                <p>Hàng chờ xác nhận và đang chuẩn bị</p>
+            </div>
+            <div class="table-toolbar" style="display:flex; gap:.5rem; align-items:center; margin-bottom:.75rem; flex-wrap: wrap;">
+                <label for="kitchenStoreFilter" style="color:var(--admin-muted)">Chọn cửa hàng:</label>
+                <select id="kitchenStoreFilter" style="min-width:220px;"></select>
+                <button class="btn" id="kitchenReloadBtn"><i class="fas fa-rotate"></i> Tải lại</button>
+                <span id="kitchenHint" style="color:#6B7280; font-size:.9rem; margin-left:.5rem;">Chỉ hiển thị đơn đã thanh toán (PAID) và đã nhận (ACCEPT).</span>
+            </div>
+            <div class="table-container">
+                <table class="admin-table">
+                    <thead>
+                        <tr>
+                            <th>Mã đơn</th>
+                            <th>Khách hàng</th>
+                            <th>Thời gian</th>
+                            <th>Trạng thái</th>
+                            <th>Tổng</th>
+                            <th>Thao tác</th>
+                        </tr>
+                    </thead>
+                    <tbody id="kitchenQueueTable">
+                        <tr><td colspan="6" style="text-align:center; color:#6B7280;">Chưa có dữ liệu</td></tr>
+                    </tbody>
+                </table>
             </div>
         </section>
 
@@ -280,6 +315,44 @@
                     </thead>
                     <tbody id="ordersTableBody">
                         <tr><td colspan="6" class="text-center">Đang tải...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Kitchen Section -->
+        <section id="section-kitchen" class="admin-section">
+            <div class="section-header">
+                <h1>Quản lý bếp</h1>
+            </div>
+            <div class="table-toolbar" style="display:flex; gap:.5rem; align-items:center; margin-bottom:.5rem; flex-wrap:wrap;">
+                <div style="display:flex; gap:.5rem; align-items:center;">
+                    <label for="kitchenStoreFilter" style="color:var(--admin-muted)">Cửa hàng:</label>
+                    <select id="kitchenStoreFilter" style="min-width:220px;"></select>
+                </div>
+                <div style="display:flex; gap:.5rem; align-items:center;">
+                    <label for="kitchenStatusFilter" style="color:var(--admin-muted)">Trạng thái:</label>
+                    <select id="kitchenStatusFilter">
+                        <option value="">PAID + ACCEPT</option>
+                        <option value="PAID">PAID</option>
+                        <option value="ACCEPT">ACCEPT</option>
+                    </select>
+                </div>
+                <button class="btn" id="kitchenRefreshBtn"><i class="fas fa-rotate"></i> Tải lại</button>
+            </div>
+            <div class="table-container">
+                <table class="admin-table">
+                    <thead>
+                        <tr>
+                            <th>Mã đơn</th>
+                            <th>Tổng tiền</th>
+                            <th>Trạng thái</th>
+                            <th>Ngày đặt</th>
+                            <th>Hành động</th>
+                        </tr>
+                    </thead>
+                    <tbody id="kitchenTableBody">
+                        <tr><td colspan="5" class="text-center">Chọn cửa hàng để xem đơn</td></tr>
                     </tbody>
                 </table>
             </div>

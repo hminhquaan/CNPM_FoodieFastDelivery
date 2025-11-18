@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hồ sơ của tôi</title>
+  <link rel="icon" type="image/svg+xml" href="img/favicon-main.svg">
+  <meta name="theme-color" content="#ff6b6b">
+  <link rel="stylesheet" href="css/style.css?v=20251111" />
+  <link rel="stylesheet" href="vendor/ol.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@latest/ol.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
+  <style>
+    /* Map container style */
+    #addrMap { height: 220px; border: 1px solid #eee; border-radius: 8px; }
+    .form-hint { font-size: .85rem; color: var(--muted, #6b7280); margin: .25rem 0 .5rem; }
+    /* Compact two-column layout specifically for profile page */
+    .profile-grid { grid-template-columns: 1fr 1fr; align-items: start; }
+    @media (max-width: 900px){ .profile-grid { grid-template-columns: 1fr; } }
+    /* Make form fields arrange in two columns to reduce vertical length */
+    .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    @media (max-width: 600px){ .form-grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <header class="header">
+    <div class="container">
+      <div class="header-content">
+        <a href="index.html" class="logo">
+          <i class="fas fa-utensils"></i>
+          <span>Foodie</span>
+        </a>
+        <nav class="nav">
+          <a href="index.html" class="nav-link">Trang chủ</a>
+          <a href="stores.html" class="nav-link">Cửa hàng</a>
+        </nav>
+        <div class="header-actions">
+          <a href="cart.html" class="btn btn-outline btn-sm" aria-label="Giỏ hàng">
+            <i class="fas fa-shopping-cart"></i>
+            <span class="cart-badge" id="cartBadge">0</span>
+          </a>
+          <div class="user-menu" id="userMenu">
+            <div id="guestMenu">
+              <button class="btn btn-outline btn-sm" onclick="window.location.href='index.html'">Đăng nhập</button>
+              <button class="btn btn-primary btn-sm" onclick="window.location.href='index.html'">Đăng ký</button>
+            </div>
+            <div class="user-dropdown" id="userDropdown" style="display: none;">
+              <button id="userAvatar" class="user-avatar" onclick="toggleDropdown()" aria-haspopup="true" aria-expanded="false">
+                <i class="fas fa-user-circle"></i>
+                <span id="userName"></span>
+              </button>
+              <div class="dropdown-menu" id="dropdownMenu">
+                <a href="orders.html"><i class="fas fa-box"></i> Đơn hàng của tôi</a>
+                <a href="profile.html"><i class="fas fa-user"></i> Hồ sơ của tôi</a>
+                <a href="#" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Đăng xuất</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="section">
+    <div class="container">
+      <h1 class="section-title"><i class="fas fa-user"></i> Hồ sơ của tôi</h1>
+
+      <div class="grid grid-2 profile-grid">
+        <!-- Profile form -->
+        <div class="card">
+          <div class="card-body">
+            <h3 style="margin-top:0">Thông tin cá nhân</h3>
+            <form id="profileForm" class="form-grid">
+              <div class="form-group">
+                <label class="form-label">Tên đăng nhập</label>
+                <input type="text" id="pfUsername" class="form-control" disabled />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Họ và tên</label>
+                <input type="text" id="pfFullName" class="form-control" required />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Email</label>
+                <input type="email" id="pfEmail" class="form-control" required />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Số điện thoại</label>
+                <input type="tel" id="pfPhone" class="form-control" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Ngày sinh</label>
+                <input type="date" id="pfDob" class="form-control" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Giới tính</label>
+                <select id="pfGender" class="form-control">
+                  <option value="">-- Chọn --</option>
+                  <option value="MALE">Nam</option>
+                  <option value="FEMALE">Nữ</option>
+                  <option value="OTHER">Khác</option>
+                </select>
+              </div>
+              <div class="form-row" style="gap:.5rem;">
+                <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Lưu thay đổi</button>
+                <button type="button" id="pfRefresh" class="btn btn-outline"><i class="fas fa-rotate"></i> Tải lại</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- Addresses -->
+        <div class="card">
+          <div class="card-body">
+            <h3 style="margin-top:0">Địa chỉ giao hàng</h3>
+            <div id="addrList" class="mini-table" style="border:1px solid #eee; border-radius:8px; padding:.5rem; max-height:360px; overflow:auto; margin-bottom:1rem;">
+              <p class="text-gray">Đang tải...</p>
+            </div>
+            <h4 style="margin-top:0.5rem">Thêm địa chỉ</h4>
+            <form id="addrForm" class="form-grid">
+              <!-- Search + suggestions -->
+              <div class="form-group" style="grid-column:1 / -1; position:relative;">
+                <label class="form-label"><i class="fas fa-magnifying-glass-location"></i> Tìm địa chỉ (gợi ý)</label>
+                <input type="text" id="adSearch" class="form-control" placeholder="Ví dụ: 273 An Dương Vương, Quận 5, TP.HCM" autocomplete="off" />
+                <div id="adSuggestions" style="position:absolute; top:64px; left:0; right:0; background:#fff; border:1px solid #eee; border-radius:8px; max-height:220px; overflow:auto; display:none; z-index:10;"></div>
+              </div>
+
+              <!-- Map and quick actions -->
+              <div class="form-group" style="grid-column:1 / -1">
+                <div class="form-hint"><i class="fas fa-location-dot"></i> Chọn trên bản đồ hoặc dùng gợi ý ở trên. Địa chỉ sẽ tự điền theo vị trí.</div>
+                <div id="addrMap" style="height: 280px;"></div>
+                <div class="form-row" style="gap:.5rem; margin-top:.5rem; justify-content:flex-end;">
+                  <button type="button" id="adUseMyLoc" class="btn btn-outline btn-sm"><i class="fas fa-location-crosshairs"></i> Lấy vị trí của tôi</button>
+                </div>
+              </div>
+
+              <!-- Address line (editable) -->
+              <div class="form-group" style="grid-column:1 / -1">
+                <label class="form-label">Địa chỉ (có thể chỉnh sửa)</label>
+                <input type="text" id="adLine" class="form-control" required />
+              </div>
+
+              <!-- Receiver and label -->
+              <div class="form-group"><label class="form-label">Nhãn</label><input type="text" id="adLabel" class="form-control" placeholder="Nhà, Công ty..." /></div>
+              <div class="form-group"><label class="form-label">Người nhận</label><input type="text" id="adReceiver" class="form-control" /></div>
+              <div class="form-group"><label class="form-label">Số điện thoại</label><input type="text" id="adPhone" class="form-control" /></div>
+
+              <!-- Basic settings -->
+              <div class="form-group" style="display:flex; align-items:center; gap:.75rem;">
+                <label class="form-label" style="margin:0"><input type="checkbox" id="adDefault" /> Đặt làm mặc định</label>
+              </div>
+
+              <!-- Advanced collapsible -->
+              <div class="form-group" style="grid-column:1 / -1; display:flex; justify-content:flex-end;">
+                <button type="button" id="adAdvancedToggle" class="btn btn-outline btn-sm"><i class="fas fa-sliders-h"></i> Nâng cao</button>
+              </div>
+              <div id="adAdvanced" class="form-grid" style="grid-column:1 / -1; display:none; gap:12px;">
+                <div class="form-group"><label class="form-label">Tỉnh/Thành phố</label>
+                  <select id="adCity" class="form-control">
+                    <option value="">-- Chọn tỉnh/thành --</option>
+                  </select>
+                </div>
+                <div class="form-group"><label class="form-label">Quận/Huyện</label>
+                  <select id="adDistrict" class="form-control" disabled>
+                    <option value="">-- Chọn quận/huyện --</option>
+                  </select>
+                </div>
+                <div class="form-group"><label class="form-label">Phường/Xã</label>
+                  <select id="adWard" class="form-control" disabled>
+                    <option value="">-- Chọn phường/xã --</option>
+                  </select>
+                </div>
+                <div class="form-group"><label class="form-label">Quốc gia</label><input type="text" id="adCountry" class="form-control" value="Việt Nam" /></div>
+                <div class="form-group"><label class="form-label">Vĩ độ (lat)</label><input type="number" step="0.000001" id="adLat" class="form-control" readonly /></div>
+                <div class="form-group"><label class="form-label">Kinh độ (lng)</label><input type="number" step="0.000001" id="adLng" class="form-control" readonly /></div>
+              </div>
+
+              <!-- Actions -->
+              <div class="form-row" style="gap:.5rem; grid-column:1 / -1;">
+                <button type="submit" class="btn btn-primary"><i class="fas fa-plus"></i> Thêm</button>
+                <button type="button" id="addrRefresh" class="btn btn-outline"><i class="fas fa-rotate"></i> Tải lại</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="js/config.js?v=20251111"></script>
+  <script src="js/main.js?v=20251111"></script>
+  <script src="js/api.js?v=20251111"></script>
+  <script src="js/auth.js?v=20251111"></script>
+  <script>
+    (function(){
+      function load(src, fallback){
+        var s=document.createElement('script');
+        s.src=src; s.onload=function(){ /* ok */ };
+        s.onerror=function(){ if (fallback) load(fallback); };
+        document.head.appendChild(s);
+      }
+      if (!window.ol){ load('vendor/ol.js','https://cdn.jsdelivr.net/npm/ol@latest/ol.js'); }
+    })();
+  </script>
+  <script src="js/profile.js?v=20251111"></script>
+</body>
+</html>

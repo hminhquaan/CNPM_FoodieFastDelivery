@@ -4,6 +4,7 @@ import dto.request.order.UpdateOrderStatusRequest;
 import dto.response.API.APIResponse;
 import dto.response.order.OrderResponse;
 import service.order.OrderService;
+import exception.BadRequestException;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -21,14 +22,49 @@ import java.util.List;
 public class OrderController {
 
     private final OrderService orderService;
+        private final repository.user.UserRepository userRepository;
+        private final repository.store.StoreRepository storeRepository;
+
+        private boolean isAdmin(java.util.Set<String> roles){
+                if (roles == null) return false;
+                return roles.stream().anyMatch(r -> r.equalsIgnoreCase("ADMIN") || r.equalsIgnoreCase("ROLE_ADMIN"));
+        }
+
+        private java.util.Set<String> getCurrentRoles(){
+                var auth = SecurityContextHolder.getContext().getAuthentication();
+                if (auth == null) return java.util.Collections.emptySet();
+                return auth.getAuthorities() == null ? java.util.Collections.emptySet() : auth.getAuthorities().stream().map(a -> a.getAuthority()).collect(java.util.stream.Collectors.toSet());
+        }
+
+        private Long getCurrentUserId(){
+                var auth = SecurityContextHolder.getContext().getAuthentication();
+                if (auth == null) return null;
+                String username = auth.getName();
+                try {
+                        return userRepository.findIdByUsername(username);
+                } catch(Exception e){ return null; }
+        }
+
+        private void assertStoreAccess(Long storeId){
+                java.util.Set<String> roles = getCurrentRoles();
+                if (isAdmin(roles)) return; // admin can access any store
+                Long uid = getCurrentUserId();
+                if (uid == null) throw new org.springframework.security.access.AccessDeniedException("Unauthorized");
+                boolean owns = false;
+                try {
+                        var stores = storeRepository.findByOwnerUserId(uid);
+                        owns = stores.stream().anyMatch(s -> java.util.Objects.equals(s.getId(), storeId));
+                } catch(Exception e){ /* ignore */ }
+                if (!owns) throw new org.springframework.security.access.AccessDeniedException("You do not have access to this store");
+        }
 
     /**
      * Create new orders from cart (Bước 1 trong sơ đồ)
      * Tạo nhiều đơn hàng, mỗi đơn cho một cửa hàng
      * Lấy userId từ token đăng nhập
      */
-    @PostMapping
-    public ResponseEntity<APIResponse<List<OrderResponse>>> createOrdersFromCart() {
+        @PostMapping
+        public ResponseEntity<APIResponse<List<OrderResponse>>> createOrdersFromCart(@RequestBody(required = false) dto.request.order.CreateOrdersRequest request) {
 
         // Lấy username từ authentication context
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
@@ -36,7 +72,7 @@ public class OrderController {
 
         log.info("Creating orders from cart for authenticated user: {}", username);
 
-        List<OrderResponse> responses = orderService.createOrdersFromCart(username);
+        List<OrderResponse> responses = orderService.createOrdersFromCart(username, request);
 
         return ResponseEntity.ok(APIResponse.<List<OrderResponse>>builder()
                 .code(200)
@@ -115,6 +151,7 @@ public class OrderController {
     @GetMapping("/store/{storeId}")
     public ResponseEntity<APIResponse<List<OrderResponse>>> getOrdersByStoreId(@PathVariable Long storeId) {
         log.info("Getting orders for store: {}", storeId);
+                assertStoreAccess(storeId);
 
         List<OrderResponse> responses = orderService.getOrdersByStoreId(storeId);
 
@@ -124,6 +161,33 @@ public class OrderController {
                 .result(responses)
                 .build());
     }
+
+        /**
+         * Kitchen queue for a store: paid orders awaiting preparation (PAID or ACCEPT)
+         * Optional status filter (?status=PAID or ACCEPT)
+         */
+        @GetMapping("/store/{storeId}/kitchen-queue")
+        public ResponseEntity<APIResponse<List<OrderResponse>>> getKitchenQueue(
+                        @PathVariable Long storeId,
+                        @RequestParam(name = "status", required = false) String status) {
+                log.info("Getting kitchen queue for store: {} status filter: {}", storeId, status);
+                assertStoreAccess(storeId);
+
+                enums.OrderStatus statusFilter = null;
+                if (status != null && !status.isBlank()) {
+                        try {
+                                statusFilter = enums.OrderStatus.valueOf(status.trim().toUpperCase());
+                        } catch (IllegalArgumentException ex) {
+                                log.warn("Invalid status filter '{}' ignored", status);
+                        }
+                }
+                List<OrderResponse> responses = orderService.getKitchenQueue(storeId, statusFilter);
+                return ResponseEntity.ok(APIResponse.<List<OrderResponse>>builder()
+                                .code(200)
+                                .message("Kitchen queue retrieved successfully")
+                                .result(responses)
+                                .build());
+        }
 
     /**
      * Cancel order
@@ -165,16 +229,48 @@ public class OrderController {
      */
     @PostMapping("/{orderId}/accept")
     public ResponseEntity<APIResponse<OrderResponse>> acceptOrder(@PathVariable Long orderId) {
-        log.info("Store accepting order: {}", orderId);
-
-        OrderResponse response = orderService.acceptOrder(orderId);
-
-        return ResponseEntity.ok(APIResponse.<OrderResponse>builder()
-                .code(200)
-                .message("Order accepted successfully and ledger entry created")
-                .result(response)
-                .build());
+                log.info("Store accepting order: {}", orderId);
+                try {
+                        // authorization: only store owner or admin
+                        OrderResponse ord = orderService.getOrderById(orderId);
+                        if (ord != null && ord.getStoreId() != null) assertStoreAccess(ord.getStoreId());
+                        OrderResponse response = orderService.acceptOrder(orderId);
+                        return ResponseEntity.ok(APIResponse.<OrderResponse>builder()
+                                        .code(200)
+                                                                                .message("Order accepted; moved to PREPARING")
+                                        .result(response)
+                                        .build());
+                } catch (BadRequestException ex) {
+                        return ResponseEntity.badRequest().body(APIResponse.<OrderResponse>builder()
+                                        .code(400)
+                                        .message(ex.getMessage())
+                                        .build());
+                }
     }
+
+        /**
+         * Kitchen marks order prepared -> trigger delivery creation/dispatch
+         * POST /api/v1/orders/{orderId}/kitchen-complete
+         */
+        @PostMapping("/{orderId}/kitchen-complete")
+        public ResponseEntity<APIResponse<OrderResponse>> kitchenComplete(@PathVariable Long orderId) {
+                log.info("Kitchen complete for order: {}", orderId);
+                try {
+                        OrderResponse ord = orderService.getOrderById(orderId);
+                        if (ord != null && ord.getStoreId() != null) assertStoreAccess(ord.getStoreId());
+                        OrderResponse response = orderService.kitchenComplete(orderId);
+                        return ResponseEntity.ok(APIResponse.<OrderResponse>builder()
+                                        .code(200)
+                                        .message("Kitchen complete; delivery created/queued")
+                                        .result(response)
+                                        .build());
+                } catch (BadRequestException ex) {
+                        return ResponseEntity.badRequest().body(APIResponse.<OrderResponse>builder()
+                                        .code(400)
+                                        .message(ex.getMessage())
+                                        .build());
+                }
+        }
 
     /**
      * Store từ chối đơn hàng
@@ -185,14 +281,21 @@ public class OrderController {
             @PathVariable Long orderId,
             @RequestParam(required = false) String reason) {
         log.info("Store rejecting order: {}", orderId);
-
-        OrderResponse response = orderService.rejectOrder(orderId, reason);
-
-        return ResponseEntity.ok(APIResponse.<OrderResponse>builder()
-                .code(200)
-                .message("Order rejected successfully")
-                .result(response)
-                .build());
+        try {
+                        OrderResponse ord = orderService.getOrderById(orderId);
+                        if (ord != null && ord.getStoreId() != null) assertStoreAccess(ord.getStoreId());
+            OrderResponse response = orderService.rejectOrder(orderId, reason);
+            return ResponseEntity.ok(APIResponse.<OrderResponse>builder()
+                    .code(200)
+                    .message("Order rejected successfully")
+                    .result(response)
+                    .build());
+        } catch (BadRequestException ex) {
+            return ResponseEntity.badRequest().body(APIResponse.<OrderResponse>builder()
+                    .code(400)
+                    .message(ex.getMessage())
+                    .build());
+        }
     }
 
     /**
@@ -228,6 +331,20 @@ public class OrderController {
                 .result(response)
                 .build());
     }
+
+        /**
+         * Admin/maintenance: Hard delete an order and related data (delivery, items, payment transactions)
+         * DELETE /api/v1/orders/{orderId}/hard-delete
+         */
+        @DeleteMapping("/{orderId}/hard-delete")
+        public ResponseEntity<APIResponse<Void>> hardDeleteOrder(@PathVariable Long orderId) {
+                log.warn("HARD DELETE requested for order {}", orderId);
+                orderService.hardDeleteOrder(orderId);
+                return ResponseEntity.ok(APIResponse.<Void>builder()
+                                .code(200)
+                                .message("Order hard-deleted")
+                                .build());
+        }
 
     // ========== ORDER ITEM MANAGEMENT APIs ==========
 

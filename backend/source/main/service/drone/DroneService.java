@@ -19,6 +19,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -31,6 +33,7 @@ public class DroneService {
 
     DroneRepository droneRepository;
     DroneMapper droneMapper;
+    DroneStationService droneStationService;
 
     @PersistenceContext
     EntityManager entityManager;
@@ -86,6 +89,9 @@ public class DroneService {
         return droneMapper.toDroneResponse(drone);
     }
 
+    // Track charging threads to prevent duplicates
+    private final java.util.concurrent.ConcurrentHashMap<Long, Thread> chargingThreads = new java.util.concurrent.ConcurrentHashMap<>();
+
     @Transactional
     public DroneResponse updateStatus(String code, DroneStatusUpdateRequest request) {
         Drone drone = droneRepository.findByCode(code)
@@ -99,13 +105,89 @@ public class DroneService {
         if (newStatus == DroneStatus.CHARGING) {
             Integer current = drone.getCurrentBatteryPercent();
             if (current == null) current = 0;
-            // Simulate charging step: +20% up to 100%
-            int charged = Math.min(100, current + 20);
-            drone.setCurrentBatteryPercent(charged);
+            // Snap to station location if available
+            try {
+                var station = droneStationService.getOrCreateDefault();
+                if (station != null && station.getLatitude() != null && station.getLongitude() != null) {
+                    try {
+                        drone.setLastLatitude(station.getLatitude());
+                        drone.setLastLongitude(station.getLongitude());
+                    } catch (Exception ignored) {}
+                }
+            } catch (Exception ignored) {}
+
+            // Save state before starting thread
+            droneRepository.save(drone);
+            final long droneIdVal = drone.getId();
+            // Start charging loop after transaction commits to avoid stale reads
+            if (TransactionSynchronizationManager.isActualTransactionActive()) {
+                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        startChargingThread(droneIdVal);
+                    }
+                });
+            } else {
+                startChargingThread(droneIdVal);
+            }
+        } else {
+            // Leaving CHARGING -> stop background thread if any
+            Thread t = chargingThreads.remove(drone.getId());
+            if (t != null && t.isAlive()) {
+                t.interrupt();
+            }
         }
 
-        drone = droneRepository.save(drone);
+        // Persist latest state
+        droneRepository.save(drone);
         return droneMapper.toDroneResponse(drone);
+    }
+
+    /**
+     * Convenience: move drone to station and switch to CHARGING, returns updated state.
+     */
+    @Transactional
+    public DroneResponse returnToStationAndCharge(String code) {
+        // Delegate to updateStatus which will snap to station and start charging after commit
+        return updateStatus(code, new DroneStatusUpdateRequest(DroneStatus.CHARGING));
+    }
+
+    private void startChargingThread(long droneIdVal) {
+        // Prevent duplicate charging threads
+        Thread existing = chargingThreads.get(droneIdVal);
+        if (existing != null && existing.isAlive()) {
+            return;
+        }
+        Thread t = new Thread(() -> {
+            try {
+                while (true) {
+                    Long key = java.util.Objects.requireNonNull(Long.valueOf(droneIdVal));
+                    Drone d = droneRepository.findById(key).orElse(null);
+                    if (d == null) break;
+                    if (d.getStatus() != DroneStatus.CHARGING) break; // charging cancelled externally
+                    int lvl = d.getCurrentBatteryPercent() == null ? 0 : d.getCurrentBatteryPercent();
+                    if (lvl >= 100) {
+                        d.setCurrentBatteryPercent(100);
+                        d.setStatus(DroneStatus.AVAILABLE);
+                        d.setLastTelemetryAt(LocalDateTime.now());
+                        droneRepository.save(d);
+                        break;
+                    }
+                    int next = Math.min(100, lvl + 5);
+                    d.setCurrentBatteryPercent(next);
+                    d.setLastTelemetryAt(LocalDateTime.now());
+                    droneRepository.save(d);
+                    Thread.sleep(1000);
+                }
+            } catch (InterruptedException ignored) {
+                // Stop charging loop
+            } finally {
+                chargingThreads.remove(droneIdVal);
+            }
+        }, "drone-charging-" + droneIdVal);
+        t.setDaemon(true);
+        chargingThreads.put(droneIdVal, t);
+        t.start();
     }
 
     public Object getCurrentDelivery(String code) {
@@ -315,12 +397,20 @@ public class DroneService {
      */
     private int estimateBatteryRequired(double distanceKm) {
         // Điều chỉnh công thức: 3% mỗi km + 7% safety margin, clamp [15,100]
-        double batteryPerKm = 3.0;
-        int safetyMargin = 7;
+        // Increase consumption to be more visible during demos
+        double batteryPerKm = 12.0;
+        int safetyMargin = 15;
         int required = (int) Math.ceil(distanceKm * batteryPerKm) + safetyMargin;
-        if (required < 15) required = 15; // tối thiểu để tránh 0% trên quãng rất ngắn
+        if (required < 25) required = 25; // minimum to avoid too small values
         if (required > 100) required = 100; // không vượt quá 100%
         return required;
+    }
+
+    /**
+     * Public helper for other services to compute estimated battery usage.
+     */
+    public int estimateBatteryUsageForDistance(double distanceKm) {
+        return estimateBatteryRequired(distanceKm);
     }
 
     /**
