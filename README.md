@@ -59,7 +59,6 @@ spring:
 Backend (Maven):
 
 ```powershell
-cd "c:\Users\hmquaan\Downloads\SGU 2022-2027\Sem1 2025-2026\CNPM\FoodFastDelivery"
 mvn -DskipTests package
 ```
 
