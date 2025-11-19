@@ -7,7 +7,9 @@ const API_CONFIG = {
     BASE_URL: (() => {
         try {
             const origin = window.location.origin || '';
-            if (/localhost:300\d|127\.0\.0\.1:300\d/.test(origin)) {
+            // Treat any dev server on port 300x as proxy mode (even when accessed via IP or hostname)
+            const port = (window.location && window.location.port) ? String(window.location.port) : '';
+            if (/^300\d$/.test(port)) {
                 return '';
             }
             if (origin && origin.startsWith('http')) {

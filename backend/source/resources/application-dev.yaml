@@ -21,8 +21,8 @@ spring:
         format_sql: true
   sql:
     init:
-      # DEV: run a specific data.sql from classpath
-      mode: always
+      # Disable re-seeding on each startup to avoid duplicate key errors when DB already has data
+      mode: never
       data-locations:
         - classpath:data_food_fast.sql
       # Optional: ensure correct encoding for Vietnamese content
@@ -49,11 +49,11 @@ vnpay:
   tmn-code: "HCVE5UQF"
   hash-secret: "QQ8FJPL59KYNDMMPJNJOGFJ7FCVNL41J"
   url: "https://sandbox.vnpayment.vn/paymentv2/vpcpay.html"
-  return-url: "http://localhost:8080/api/v1/payments/vnpay-return"
+  return-url: "http://172.20.10.2:8080/api/v1/payments/vnpay-return"
 
 # Frontend base URL for building links in payment return pages
 frontend:
-  base-url: "http://localhost:3000"
+  base-url: "http://172.20.10.2:3000"
   api-url: "https://sandbox.vnpayment.vn/merchant_webapi/api/transaction"
   version: "2.1.0"
   command: "pay"
