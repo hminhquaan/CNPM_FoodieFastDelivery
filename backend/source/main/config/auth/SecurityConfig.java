@@ -53,7 +53,10 @@ public class SecurityConfig {
                         "/api/v1/payments/vnpay-return", "/api/v1/payments/vnpay-ipn",
                         "/location","/location/**",
                         "/storesaddresses","/storesaddresses/**",
-                        "/drones","/drones/**").permitAll()
+                        
+                    // Allow GET for drones public (listing and fetch by code)
+                    "/drones", "/api/v1/drones",
+                    "/drones/*", "/api/v1/drones/*").permitAll()
                 .requestMatchers("/users/userCreated").permitAll()
 
                 // Allow static resources (HTML, CSS, JS, images)
@@ -78,6 +81,12 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.PUT, "/categories/**").authenticated()
                         .requestMatchers(HttpMethod.PATCH, "/categories/**").authenticated()
                         .requestMatchers(HttpMethod.DELETE, "/categories/**").authenticated()
+
+                        // Drones write protections
+                        .requestMatchers(HttpMethod.PUT, "/drones/**", "/api/v1/drones/**").authenticated()
+                        .requestMatchers(HttpMethod.DELETE, "/drones/**", "/api/v1/drones/**").authenticated()
+                        // Keep registration open if needed
+                        .requestMatchers(HttpMethod.POST, "/drones/register", "/api/v1/drones/register").permitAll()
 
                         // Authenticated user endpoints
                         .requestMatchers("/users/**").authenticated()

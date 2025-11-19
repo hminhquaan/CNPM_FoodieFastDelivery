@@ -599,9 +599,17 @@ public class DeliveryService {
             builder.orderCode(delivery.getOrder().getOrderCode());
         }
 
-        // Add drone code if drone exists
+        // Add drone code; resolve if lazy relation not loaded
+        entity.Drone resolvedDrone = null;
         if (delivery.getDrone() != null) {
-            builder.droneCode(delivery.getDrone().getCode());
+            resolvedDrone = delivery.getDrone();
+            builder.droneCode(resolvedDrone.getCode());
+        } else if (delivery.getDroneId() != null) {
+            try {
+                Long drKey = java.util.Objects.requireNonNull(delivery.getDroneId());
+                resolvedDrone = droneRepository.findById(drKey).orElse(null);
+                if (resolvedDrone != null) builder.droneCode(resolvedDrone.getCode());
+            } catch (Exception ignore) { /* no-op */ }
         }
 
         // Add store name if store exists
@@ -609,8 +617,71 @@ public class DeliveryService {
             builder.pickupStoreName(delivery.getPickupStore().getName());
         }
 
-        // Calculate estimated flight time if needed
-        // TODO: Implement proper calculation based on distance
+        // Calculate estimated flight time and ETA if possible
+        try {
+            Double dist = null;
+            if (delivery.getDistanceKm() != null) dist = delivery.getDistanceKm().doubleValue();
+            // Try compute distance if missing and we have store & order snapshots
+            if (dist == null) {
+                Double storeLat = null, storeLng = null;
+                if (delivery.getPickupStore() != null) {
+                    try {
+                        var addrs = storeAddressRepository.findByStore_Id(delivery.getPickupStore().getId());
+                        if (!addrs.isEmpty()) { storeLat = addrs.get(0).getLatitude(); storeLng = addrs.get(0).getLongitude(); }
+                    } catch (Exception __) {}
+                }
+                Double customerLat = null, customerLng = null;
+                String snap = delivery.getDropoffAddressSnapshot();
+                if (snap == null && delivery.getOrder() != null) {
+                    try { snap = delivery.getOrder().getDeliveryAddressSnapshot(); } catch (Exception __) {}
+                }
+                if (snap != null && snap.trim().startsWith("{")) {
+                    try {
+                        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                        java.util.Map<String, Object> map = mapper.readValue(snap, new com.fasterxml.jackson.core.type.TypeReference<java.util.Map<String, Object>>() {});
+                        Object latObj = map.get("lat");
+                        Object lngObj = map.get("lng");
+                        if (latObj == null) latObj = map.get("latitude");
+                        if (lngObj == null) lngObj = map.get("longitude");
+                        if (latObj instanceof Number) customerLat = ((Number) latObj).doubleValue();
+                        else if (latObj instanceof String) customerLat = Double.parseDouble(((String) latObj).trim());
+                        if (lngObj instanceof Number) customerLng = ((Number) lngObj).doubleValue();
+                        else if (lngObj instanceof String) customerLng = Double.parseDouble(((String) lngObj).trim());
+                    } catch (Exception __) { /* ignore */ }
+                }
+                if (storeLat != null && storeLng != null && customerLat != null && customerLng != null) {
+                    dist = droneService.calculateFlightDistance(storeLat, storeLng, customerLat, customerLng);
+                }
+            }
+
+            if (dist != null) {
+                int estMinutes;
+                if (resolvedDrone != null) {
+                    // Compute payload weight if possible
+                    int weightGram = 500;
+                    try {
+                        if (delivery.getOrder() != null) {
+                            Long ordKey = java.util.Objects.requireNonNull(delivery.getOrder().getId());
+                            weightGram = orderItemRepository.findByOrderId(ordKey).stream()
+                                    .mapToInt(item -> {
+                                        Long pid = item.getProductId();
+                                        var p = (pid != null) ? productRepository.findById(pid).orElse(null) : null;
+                                        int w = (p!=null && p.getWeightGram()!=null) ? p.getWeightGram() : 250;
+                                        int q = (item.getQuantity()==null?1:item.getQuantity());
+                                        return w * q;
+                                    })
+                                    .sum();
+                            if (weightGram <= 0) weightGram = 500;
+                        }
+                    } catch (Exception __) { /* keep default */ }
+                    estMinutes = droneService.estimateFlightTimeForDrone(resolvedDrone, dist, weightGram);
+                } else {
+                    estMinutes = droneService.estimateFlightTime(dist);
+                }
+                builder.estimatedFlightTimeMinutes(estMinutes);
+                builder.estimatedArrivalTime(LocalDateTime.now().plusMinutes(Math.max(0, estMinutes)));
+            }
+        } catch (Exception ignore) { /* best-effort */ }
 
         return builder.build();
     }

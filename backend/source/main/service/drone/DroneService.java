@@ -1,9 +1,11 @@
 package service.drone;
 
 import repository.drone.DroneRepository;
+import repository.delivery.DeliveryRepository;
 import dto.request.DroneLocationUpdateRequest;
 import dto.request.DroneRegisterRequest;
 import dto.request.DroneStatusUpdateRequest;
+import dto.request.DroneUpdateRequest;
 import dto.response.DroneResponse;
 import entity.Delivery;
 import entity.Drone;
@@ -34,6 +36,7 @@ public class DroneService {
     DroneRepository droneRepository;
     DroneMapper droneMapper;
     DroneStationService droneStationService;
+    DeliveryRepository deliveryRepository;
 
     @PersistenceContext
     EntityManager entityManager;
@@ -70,6 +73,45 @@ public class DroneService {
         Drone drone = droneRepository.findByCode(code)
                 .orElseThrow(() -> new AppException(ErrorCode.DRONE_NOT_FOUND));
         return droneMapper.toDroneResponse(drone);
+    }
+
+    @Transactional
+    public DroneResponse updateDrone(String code, DroneUpdateRequest request) {
+        Drone drone = droneRepository.findByCode(code)
+                .orElseThrow(() -> new AppException(ErrorCode.DRONE_NOT_FOUND));
+
+        if (request.getModel() != null) {
+            drone.setModel(request.getModel());
+        }
+        if (request.getMaxPayloadGram() != null) {
+            drone.setMaxPayloadGram(request.getMaxPayloadGram());
+        }
+        drone.setLastTelemetryAt(LocalDateTime.now());
+
+        drone = droneRepository.save(drone);
+        return droneMapper.toDroneResponse(drone);
+    }
+
+    @Transactional
+    public void deleteDrone(String code) {
+        Drone drone = droneRepository.findByCode(code)
+                .orElseThrow(() -> new AppException(ErrorCode.DRONE_NOT_FOUND));
+
+        // Prevent deleting drones that are active or charging
+        if (drone.getStatus() == DroneStatus.IN_FLIGHT || drone.getStatus() == DroneStatus.CHARGING) {
+            throw new AppException(ErrorCode.DRONE_NOT_AVAILABLE);
+        }
+
+        // Prevent delete if there are active deliveries assigned to this drone
+        var active = deliveryRepository.findActiveDeliveriesByDrone(
+                drone.getId(),
+                java.util.List.of(DeliveryStatus.ASSIGNED, DeliveryStatus.LAUNCHED, DeliveryStatus.ARRIVING)
+        );
+        if (!active.isEmpty()) {
+            throw new AppException(ErrorCode.DRONE_NOT_AVAILABLE);
+        }
+
+        droneRepository.delete(drone);
     }
 
     @Transactional
@@ -220,37 +262,38 @@ public class DroneService {
     public DroneResponse findAvailableDroneForDelivery(Integer weightGram,
                                                         Double fromLat, Double fromLng,
                                                         Double toLat, Double toLng) {
-        double distance = calculateFlightDistance(fromLat, fromLng, toLat, toLng);
-        int requiredBattery = estimateBatteryRequired(distance);
+        double distanceDelivery = calculateFlightDistance(fromLat, fromLng, toLat, toLng);
+        int requiredBattery = estimateBatteryRequired(distanceDelivery);
 
-        List<Drone> availableDrones = droneRepository.findAll().stream()
-                .filter(drone -> drone.getStatus() == DroneStatus.AVAILABLE)
-                .filter(drone -> drone.getMaxPayloadGram() >= weightGram)
-                .filter(drone -> drone.getCurrentBatteryPercent() >= requiredBattery)
-                .sorted((d1, d2) -> {
-                    // Sort by: 1) Distance to pickup, 2) Battery level
-                    double dist1 = calculateFlightDistance(
-                            d1.getLastLatitude().doubleValue(),
-                            d1.getLastLongitude().doubleValue(),
-                            fromLat, fromLng
-                    );
-                    double dist2 = calculateFlightDistance(
-                            d2.getLastLatitude().doubleValue(),
-                            d2.getLastLongitude().doubleValue(),
-                            fromLat, fromLng
-                    );
-                    if (Math.abs(dist1 - dist2) > 0.5) { // If distance difference > 0.5km
-                        return Double.compare(dist1, dist2);
-                    }
-                    return Integer.compare(d2.getCurrentBatteryPercent(), d1.getCurrentBatteryPercent());
-                })
-                .toList();
+        List<Drone> candidates = droneRepository.findAll().stream()
+            .filter(drone -> drone.getStatus() == DroneStatus.AVAILABLE)
+            .filter(drone -> drone.getMaxPayloadGram() >= weightGram)
+            .filter(drone -> drone.getCurrentBatteryPercent() >= requiredBattery)
+            .collect(Collectors.toList());
 
-        if (availableDrones.isEmpty()) {
+        if (candidates.isEmpty()) {
             throw new AppException(ErrorCode.NO_AVAILABLE_DRONE);
         }
 
-        return droneMapper.toDroneResponse(availableDrones.get(0));
+        // Rank by fastest ETA considering code-based speed and weight-adjusted speed
+        Drone best = candidates.stream()
+            .min((d1, d2) -> {
+                double eta1 = estimateTotalTimeMinutesForDrone(d1, weightGram, fromLat, fromLng, toLat, toLng);
+                double eta2 = estimateTotalTimeMinutesForDrone(d2, weightGram, fromLat, fromLng, toLat, toLng);
+                int cmp = Double.compare(eta1, eta2);
+                if (cmp != 0) return cmp;
+                // Tie-breaker: closer to pickup, then higher battery
+                double d1Pickup = calculateFlightDistance(
+                    d1.getLastLatitude().doubleValue(), d1.getLastLongitude().doubleValue(), fromLat, fromLng);
+                double d2Pickup = calculateFlightDistance(
+                    d2.getLastLatitude().doubleValue(), d2.getLastLongitude().doubleValue(), fromLat, fromLng);
+                int cmp2 = Double.compare(d1Pickup, d2Pickup);
+                if (cmp2 != 0) return cmp2;
+                return Integer.compare(d2.getCurrentBatteryPercent(), d1.getCurrentBatteryPercent());
+            })
+            .orElseThrow(() -> new AppException(ErrorCode.NO_AVAILABLE_DRONE));
+
+        return droneMapper.toDroneResponse(best);
     }
 
     /**
@@ -389,6 +432,68 @@ public class DroneService {
     public int estimateFlightTime(double distanceKm) {
         final double AVERAGE_SPEED_KMH = 30.0;
         return (int) Math.ceil((distanceKm / AVERAGE_SPEED_KMH) * 60);
+    }
+
+    /**
+     * Estimate flight time (minutes) for a specific drone and payload.
+     * Uses per-code base speed and reduces speed with higher payload ratio.
+     */
+    public int estimateFlightTimeForDrone(Drone drone, double distanceKm, int payloadGram) {
+        double speed = effectiveSpeedKmh(drone, payloadGram);
+        if (speed <= 1.0) speed = 1.0; // avoid div-by-zero
+        return (int) Math.ceil((distanceKm / speed) * 60.0);
+    }
+
+    private double estimateTotalTimeMinutesForDrone(Drone drone, int payloadGram,
+                                                    double fromLat, double fromLng,
+                                                    double toLat, double toLng) {
+        // Leg 1: drone -> pickup (no payload)
+        double distToPickup = calculateFlightDistance(
+                drone.getLastLatitude().doubleValue(), drone.getLastLongitude().doubleValue(), fromLat, fromLng);
+        double baseSpeed = baseSpeedKmhForCode(drone.getCode());
+        double minutesToPickup = (distToPickup / Math.max(baseSpeed, 1.0)) * 60.0;
+        // Leg 2: pickup -> dropoff (with payload)
+        double distDelivery = calculateFlightDistance(fromLat, fromLng, toLat, toLng);
+        double effSpeed = effectiveSpeedKmh(drone, payloadGram);
+        double minutesDeliver = (distDelivery / Math.max(effSpeed, 1.0)) * 60.0;
+        return Math.ceil(minutesToPickup + minutesDeliver);
+    }
+
+    /**
+     * Public ETA calculator for a given drone id and route.
+     */
+    public int estimateTotalTimeMinutesForDroneId(Long droneId, int payloadGram,
+                                                  double fromLat, double fromLng,
+                                                  double toLat, double toLng) {
+        Long key = java.util.Objects.requireNonNull(droneId);
+        Drone d = droneRepository.findById(key).orElse(null);
+        if (d == null) return estimateFlightTime(calculateFlightDistance(fromLat, fromLng, toLat, toLng));
+        return (int) estimateTotalTimeMinutesForDrone(d, payloadGram, fromLat, fromLng, toLat, toLng);
+    }
+
+    /**
+     * Base speed by code family. Adjust these profiles as needed.
+     */
+    private double baseSpeedKmhForCode(String code) {
+        if (code == null) return 30.0;
+        String c = code.toUpperCase();
+        if (c.contains("-BM-")) return 42.0; // Banh Mi drones: fast
+        if (c.contains("-SS-")) return 36.0; // Sushi drones: medium
+        if (c.contains("-PZ-")) return 28.0; // Pizza drones: slower
+        return 30.0; // default
+    }
+
+    /**
+     * Effective speed considering payload ratio. Up to 40% reduction at max load.
+     */
+    private double effectiveSpeedKmh(Drone drone, int payloadGram) {
+        double base = baseSpeedKmhForCode(drone.getCode());
+        Integer maxPayload = drone.getMaxPayloadGram();
+        if (maxPayload == null || maxPayload <= 0) return base;
+        double ratio = Math.min(1.0, Math.max(0.0, ((double) payloadGram) / maxPayload));
+        double factor = 1.0 - 0.4 * ratio; // reduce up to 40%
+        if (factor < 0.6) factor = 0.6; // clamp
+        return base * factor;
     }
 
     /**

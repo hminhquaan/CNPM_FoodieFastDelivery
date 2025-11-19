@@ -118,7 +118,9 @@ FoodFastDelivery/
 - Auth: `POST /auth/login`, `GET /auth/validate`, `POST /auth/logout`
 - Sản phẩm/Đơn hàng: `GET /api/v1/products`, `POST /api/v1/orders`, `GET /api/v1/orders/{id}`
 - Giao hàng: `GET /api/v1/deliveries/by-order/{orderId}`, `PATCH /api/v1/deliveries/{id}/status`
-- Drone: `GET /drones`, `POST /drones/{id}/return-to-station`, `POST /drones/{id}/charge`
+- Drone (công khai): `GET /drones`, `GET /drones/{code}`, `GET /api/v1/drones/{code}`
+- Drone (điều khiển): `POST /drones/{code}/return-to-station`, `POST /drones/{code}/status`, `POST /drones/{code}/monitor-battery`
+- Drone (quản trị): `PUT /drones/{code}`, `DELETE /drones/{code}` — yêu cầu token với vai trò `ADMIN` hoặc `STORE_OWNER`.S
 
 Lưu ý: Đường dẫn cụ thể có thể thay đổi theo module, xem mã nguồn controller trong `backend/source/main/controller/**`.
 

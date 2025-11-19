@@ -1114,6 +1114,7 @@ async function loadDrones() {
                 <td>${telemetry}</td>
                 <td>
                     <div class="action-buttons drone-actions">
+                        <button class="action-btn" onclick="openEditDrone('${d.code}')" title="Chỉnh sửa"><i class="fas fa-pen"></i></button>
                         <button class="action-btn success" onclick="setDroneAvailable('${d.code}')" title="Đặt sẵn sàng (AVAILABLE)"><i class="fas fa-check-circle"></i></button>
                         <button class="action-btn warning" ${canCharge?'' : 'disabled'} onclick="returnDroneToStation('${d.code}')" title="${canCharge ? 'Đưa về trạm sạc (CHARGING)' : 'Pin đã đầy'}"><i class="fas fa-charging-station"></i></button>
                         <button class="action-btn purple" onclick="setDroneMaintenance('${d.code}')" title="Bảo trì (MAINTENANCE)"><i class="fas fa-screwdriver-wrench"></i></button>
@@ -1147,12 +1148,23 @@ document.addEventListener('click', (e) => {
         showModalById('droneModal');
         const form = document.getElementById('droneForm');
         if (form) form.reset();
+        if (form) {
+            form.dataset.mode = 'create';
+            form.dataset.code = '';
+        }
         // Default coords to station
         const st = window.DRONE_STATION || { lat: 10.776, lng: 106.700 };
         const latEl = document.getElementById('droneLatitude');
         const lngEl = document.getElementById('droneLongitude');
         if (latEl) latEl.value = st.lat;
         if (lngEl) lngEl.value = st.lng;
+        // Ensure fields are visible for create
+        const codeEl = document.getElementById('droneCode');
+        if (codeEl) { codeEl.disabled = false; }
+        const formRow = document.querySelector('#droneForm .form-row.cols-2');
+        if (formRow) formRow.style.display = '';
+        const titleEl = document.getElementById('droneModalTitle');
+        if (titleEl) titleEl.textContent = 'Đăng ký drone';
     }
     if (e.target && e.target.id === 'closeDroneModal') {
         hideModalById('droneModal');
@@ -1165,22 +1177,38 @@ if (droneForm) {
     droneForm.addEventListener('submit', async (ev) => {
         ev.preventDefault();
         try {
-            const payload = {
-                code: document.getElementById('droneCode').value.trim(),
-                model: document.getElementById('droneModel').value.trim(),
-                maxPayloadGram: parseInt(document.getElementById('droneMaxPayload').value, 10),
-                latitude: document.getElementById('droneLatitude').value,
-                longitude: document.getElementById('droneLongitude').value
+            const mode = droneForm.dataset.mode || 'create';
+            const codeVal = document.getElementById('droneCode').value.trim();
+            const modelVal = document.getElementById('droneModel').value.trim();
+            const payloadCommon = {
+                model: modelVal,
+                maxPayloadGram: parseInt(document.getElementById('droneMaxPayload').value, 10)
             };
-            if (!payload.code || !payload.model) {
-                showNotification('Vui lòng nhập đủ thông tin drone', 'warning');
+            if (!modelVal) {
+                showNotification('Vui lòng nhập model', 'warning');
                 return;
             }
             Loading.show();
-            await APIHelper.post('/drones/register', payload);
+            if (mode === 'edit') {
+                await APIHelper.put(`/drones/${codeVal}`, payloadCommon);
+                showNotification('Cập nhật drone thành công', 'success');
+            } else {
+                const payloadCreate = {
+                    code: codeVal,
+                    ...payloadCommon,
+                    latitude: document.getElementById('droneLatitude').value,
+                    longitude: document.getElementById('droneLongitude').value
+                };
+                if (!payloadCreate.code) {
+                    showNotification('Vui lòng nhập mã drone', 'warning');
+                    Loading.hide();
+                    return;
+                }
+                await APIHelper.post('/drones/register', payloadCreate);
+                showNotification('Đăng ký drone thành công', 'success');
+            }
             Loading.hide();
             hideModalById('droneModal');
-            showNotification('Đăng ký drone thành công', 'success');
             loadDrones();
         } catch (err) {
             Loading.hide();
@@ -1274,6 +1302,33 @@ window.confirmDeleteDrone = async function(code) {
         showNotification(msg, 'error');
     } finally {
         Loading.hide();
+    }
+};
+
+// Open edit drone modal
+window.openEditDrone = async function(code) {
+    try {
+        const resp = await APIHelper.get(API_CONFIG.ENDPOINTS.DRONE_BY_CODE(code));
+        const d = resp?.result || resp;
+        showModalById('droneModal');
+        const form = document.getElementById('droneForm');
+        if (form) {
+            form.dataset.mode = 'edit';
+            form.dataset.code = code;
+        }
+        const titleEl = document.getElementById('droneModalTitle');
+        if (titleEl) titleEl.textContent = `Cập nhật drone ${code}`;
+        const codeEl = document.getElementById('droneCode');
+        if (codeEl) { codeEl.value = code; codeEl.disabled = true; }
+        const modelEl = document.getElementById('droneModel');
+        if (modelEl) modelEl.value = d?.model || '';
+        const maxEl = document.getElementById('droneMaxPayload');
+        if (maxEl) maxEl.value = d?.maxPayloadGram || 0;
+        // Hide lat/lng row for edit
+        const formRow = document.querySelector('#droneForm .form-row.cols-2');
+        if (formRow) formRow.style.display = 'none';
+    } catch (e) {
+        showNotification('Không thể mở form chỉnh sửa drone', 'error');
     }
 };
 // User CRUD helpers

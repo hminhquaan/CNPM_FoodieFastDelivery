@@ -2,7 +2,6 @@ package controller.delivery;
 
 import service.delivery.DeliveryService;
 import dto.request.delivery.AssignDroneRequest;
-import dto.request.delivery.CreateDeliveryRequest;
 import dto.request.delivery.UpdateDeliveryStatusRequest;
 import dto.response.API.APIResponse;
 import dto.response.delivery.DeliveryResponse;
@@ -29,7 +28,7 @@ public class DeliveryController {
      */
     @PostMapping
     public ResponseEntity<APIResponse<DeliveryResponse>> createDelivery(
-            @Valid @RequestBody CreateDeliveryRequest request) {
+            @Valid @RequestBody dto.request.delivery.CreateDeliveryRequest request) {
         log.info("Creating delivery for order: {}", request.getOrderId());
 
         DeliveryResponse response = deliveryService.createDelivery(request);

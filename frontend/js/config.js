@@ -77,7 +77,8 @@ const API_CONFIG = {
         // Drones
         DRONES: '/drones',
         DRONE_BY_CODE: (code) => `/drones/${code}`,
-        DRONE_LOCATION: (code) => `/drones/${code}/location`
+        DRONE_LOCATION: (code) => `/drones/${code}/location`,
+        DRONES_CHOOSE: '/api/v1/drones/choose'
     }
 };
 
@@ -276,24 +277,34 @@ const FormatHelper = {
 
 // Toast notification
 const Toast = {
-    show(message, type = 'info') {
+    __queue: [],
+    __showing: false,
+    __defaultDuration: 3000,
+    show(message, type = 'info', opts = {}) {
+        const duration = typeof opts.duration === 'number' ? opts.duration : this.__defaultDuration;
+        this.__queue.push({ message, type, duration });
+        if (!this.__showing) this.__dequeueAndShow();
+    },
+    __dequeueAndShow() {
+        const next = this.__queue.shift();
+        if (!next) { this.__showing = false; return; }
+        this.__showing = true;
+        const { message, type, duration } = next;
         const toast = document.createElement('div');
         toast.className = `toast toast-${type}`;
         toast.innerHTML = `
             <i class="fas fa-${this.getIcon(type)}"></i>
             <span>${message}</span>
         `;
-
         document.body.appendChild(toast);
-
-        setTimeout(() => {
-            toast.classList.add('show');
-        }, 100);
-
+        setTimeout(() => { toast.classList.add('show'); }, 50);
         setTimeout(() => {
             toast.classList.remove('show');
-            setTimeout(() => toast.remove(), 300);
-        }, 3000);
+            setTimeout(() => {
+                try { toast.remove(); } catch(_){}
+                this.__dequeueAndShow();
+            }, 250);
+        }, Math.max(1000, duration));
     },
 
     getIcon(type) {
@@ -306,20 +317,20 @@ const Toast = {
         return icons[type] || 'info-circle';
     },
 
-    success(message) {
-        this.show(message, 'success');
+    success(message, opts) {
+        this.show(message, 'success', opts);
     },
 
-    error(message) {
-        this.show(message, 'error');
+    error(message, opts) {
+        this.show(message, 'error', opts);
     },
 
-    warning(message) {
-        this.show(message, 'warning');
+    warning(message, opts) {
+        this.show(message, 'warning', opts);
     },
 
-    info(message) {
-        this.show(message, 'info');
+    info(message, opts) {
+        this.show(message, 'info', opts);
     }
 };
 

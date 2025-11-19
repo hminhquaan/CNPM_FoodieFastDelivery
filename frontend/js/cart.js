@@ -1,6 +1,20 @@
 // Cart.js - Shopping Cart Logic
 
 let cartData = null;
+// Guard double submit across odd browser events
+window.__checkoutInProgress = false;
+window.__checkoutInProgressAt = 0;
+window.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+        window.__checkoutInProgress = false;
+    }
+});
+window.addEventListener('pageshow', () => { // when user navigates back
+    window.__checkoutInProgress = false;
+});
+window.addEventListener('beforeunload', () => {
+    window.__checkoutInProgress = false;
+});
 let checkoutDropoff = null; // { addressId? , lat?, lng?, fullAddress?, label? }
 let __map, __mapMarkerLayer, __pickedPoint = null, __pickedAddress = null;
 let __searchDebounce;
@@ -200,18 +214,34 @@ async function proceedToCheckout() {
         return;
     }
 
+    // Reset stale in-progress state (e.g., user navigated away)
+    if (window.__checkoutInProgress && window.__checkoutInProgressAt && (Date.now() - window.__checkoutInProgressAt > 15000)) {
+        window.__checkoutInProgress = false;
+    }
+    if (window.__checkoutInProgress) {
+        Toast.info('Đang xử lý thanh toán, vui lòng chờ...');
+        return;
+    }
+
+    // Preview suitable drone + ETA before confirming
+    try {
+        await previewDroneForCheckout();
+    } catch (e) {
+        console.warn('Preview drone failed:', e);
+    }
+
     if (!confirm('Xác nhận tạo đơn hàng?')) {
         return;
     }
 
     try {
         Loading.show();
-        if (window.__checkoutInProgress) return; // prevent double submit
         window.__checkoutInProgress = true;
+        window.__checkoutInProgressAt = Date.now();
         const response = await APIHelper.post(API_CONFIG.ENDPOINTS.ORDERS, checkoutDropoff || undefined);
         if (response.result && response.result.length > 0) {
             const orders = response.result;
-            Toast.success('Tạo đơn hàng thành công!');
+            Toast.success('Tạo đơn hàng thành công!', { duration: 2200 });
             const firstOrder = orders[0];
             setTimeout(async () => {
                 try {
@@ -242,6 +272,76 @@ async function proceedToCheckout() {
     } finally {
         Loading.hide();
         window.__checkoutInProgress = false;
+        window.__checkoutInProgressAt = 0;
+    }
+}
+
+// Preview suitable drone for current cart (first store) and selected dropoff
+async function previewDroneForCheckout(){
+    try {
+        const items = (cartData && cartData.cartItems) ? cartData.cartItems : [];
+        if (!items.length) return;
+
+        // Compute approximate payload weight (fallback 250g per item if unknown)
+        const weightGram = items.reduce((sum, it) => sum + ((it.weightGram || 250) * (it.quantity || 1)), 0);
+
+        // Resolve dropoff coordinates
+        let toLat = null, toLng = null;
+        if (checkoutDropoff && typeof checkoutDropoff.lat === 'number' && typeof checkoutDropoff.lng === 'number'){
+            toLat = checkoutDropoff.lat; toLng = checkoutDropoff.lng;
+        }
+        if (!toLat || !toLng){
+            // If saved address selected earlier, try to load from server to get lat/lng
+            try {
+                const user = AuthHelper.getUser();
+                if (user && user.id){
+                    const res = await APIHelper.get(API_CONFIG.ENDPOINTS.USER_ADDRESSES(user.id));
+                    const addrs = (res && res.result) || res || [];
+                    const id = checkoutDropoff && checkoutDropoff.addressId;
+                    const addr = Array.isArray(addrs) ? addrs.find(a => String(a.id) === String(id)) : null;
+                    if (addr && typeof addr.latitude === 'number' && typeof addr.longitude === 'number'){
+                        toLat = addr.latitude; toLng = addr.longitude;
+                    }
+                }
+            } catch(_) { /* ignore */ }
+        }
+        if (!toLat || !toLng){
+            // No location selected; skip preview
+            return;
+        }
+
+        // Resolve store location (match by store name from /api/stores)
+        let storeName = items[0].storeName || '';
+        let fromLat = null, fromLng = null;
+        try {
+            const storesResp = await APIHelper.get(API_CONFIG.ENDPOINTS.STORES);
+            const stores = (storesResp && storesResp.result) || storesResp || [];
+            const store = Array.isArray(stores) ? stores.find(s => (s.name || '').toLowerCase() === (storeName||'').toLowerCase()) : null;
+            if (store && store.id){
+                const addrList = await APIHelper.get(`/api/stores/${store.id}/addresses`);
+                const addrs = (addrList && addrList.result) || addrList || [];
+                if (Array.isArray(addrs) && addrs.length){
+                    fromLat = addrs[0].latitude; fromLng = addrs[0].longitude;
+                }
+            }
+        } catch(_) { /* ignore */ }
+        if (!fromLat || !fromLng){
+            // fallback demo coordinates (District 1)
+            fromLat = 10.762622; fromLng = 106.660172;
+        }
+
+        const qs = new URLSearchParams({
+            weightGram: String(weightGram),
+            fromLat: String(fromLat), fromLng: String(fromLng),
+            toLat: String(toLat), toLng: String(toLng)
+        }).toString();
+        const resp = await APIHelper.get(`${API_CONFIG.ENDPOINTS.DRONES_CHOOSE}?${qs}`);
+        const data = (resp && resp.result) || resp;
+        if (data && data.drone && data.drone.code){
+            Toast.info(`Drone ${data.drone.code} phù hợp, ETA ~ ${data.etaMinutes} phút`, { duration: 1800 });
+        }
+    } catch(e){
+        console.warn('previewDroneForCheckout error', e);
     }
 }
 
@@ -505,7 +605,7 @@ function chooseSavedAddress(addrId){
         const a = (__savedAddrs || []).find(x => String(x.id) === String(addrId));
         if (!a){ Toast.error('Không tìm thấy địa chỉ'); return; }
         // prefer using addressId for backend to resolve
-        checkoutDropoff = { addressId: a.id };
+        checkoutDropoff = { addressId: a.id, lat: a.latitude, lng: a.longitude };
         const loc = [a.ward, a.district, a.city, a.country].filter(Boolean).join(', ');
         const title = a.label || 'Địa chỉ';
         const display = document.getElementById('dropoffDisplay');

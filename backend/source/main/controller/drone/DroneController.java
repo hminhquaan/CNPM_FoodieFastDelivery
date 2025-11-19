@@ -5,6 +5,7 @@ import service.drone.DroneStationService;
 import dto.request.DroneLocationUpdateRequest;
 import dto.request.DroneRegisterRequest;
 import dto.request.DroneStatusUpdateRequest;
+import dto.request.DroneUpdateRequest;
 import dto.response.API.APIResponse;
 import dto.response.DroneResponse;
 import dto.response.DroneStationResponse;
@@ -15,6 +16,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -51,6 +53,36 @@ public class DroneController {
                                 .code(200)
                                 .message("Drones retrieved")
                                 .result(list)
+                                .build());
+        }
+
+        /**
+         * Edit drone details (model, maxPayloadGram)
+         */
+        @PutMapping("/{code}")
+        @PreAuthorize("hasAnyRole('ADMIN','STORE_OWNER')")
+        public ResponseEntity<APIResponse<DroneResponse>> updateDrone(
+                        @PathVariable String code,
+                        @Valid @RequestBody DroneUpdateRequest request) {
+                DroneResponse updated = droneService.updateDrone(code, request);
+                return ResponseEntity.ok(APIResponse.<DroneResponse>builder()
+                                .code(200)
+                                .message("Drone updated successfully")
+                                .result(updated)
+                                .build());
+        }
+
+        /**
+         * Delete a drone by code
+         */
+        @DeleteMapping("/{code}")
+        @PreAuthorize("hasAnyRole('ADMIN','STORE_OWNER')")
+        public ResponseEntity<APIResponse<Object>> deleteDrone(@PathVariable String code) {
+                droneService.deleteDrone(code);
+                return ResponseEntity.ok(APIResponse.builder()
+                                .code(200)
+                                .message("Drone deleted")
+                                .result(null)
                                 .build());
         }
 
@@ -233,6 +265,35 @@ public class DroneController {
                 return ResponseEntity.ok(APIResponse.builder()
                                 .code(200)
                                 .message("Distance calculated")
+                                .result(payload)
+                                .build());
+        }
+
+        /**
+         * Choose best drone for a route and payload; returns selected drone and ETA.
+         */
+        @GetMapping("/choose")
+        public ResponseEntity<APIResponse<Object>> chooseDrone(
+                        @RequestParam Integer weightGram,
+                        @RequestParam Double fromLat,
+                        @RequestParam Double fromLng,
+                        @RequestParam Double toLat,
+                        @RequestParam Double toLng) {
+                var selected = droneService.findAvailableDroneForDelivery(weightGram, fromLat, fromLng, toLat, toLng);
+                double distance = droneService.calculateFlightDistance(fromLat, fromLng, toLat, toLng);
+                int eta = 0;
+                try {
+                        eta = droneService.estimateTotalTimeMinutesForDroneId(selected.getId(), weightGram, fromLat, fromLng, toLat, toLng);
+                } catch (Exception __) {
+                        eta = droneService.estimateFlightTime(distance);
+                }
+                var payload = new java.util.HashMap<String, Object>();
+                payload.put("distanceKm", Math.round(distance * 100.0) / 100.0);
+                payload.put("etaMinutes", eta);
+                payload.put("drone", selected);
+                return ResponseEntity.ok(APIResponse.builder()
+                                .code(200)
+                                .message("Best drone selected")
                                 .result(payload)
                                 .build());
         }
