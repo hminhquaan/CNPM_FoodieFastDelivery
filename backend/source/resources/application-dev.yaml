@@ -22,7 +22,7 @@ spring:
   sql:
     init:
       # Disable re-seeding on each startup to avoid duplicate key errors when DB already has data
-      mode: never
+      mode: always
       data-locations:
         - classpath:data_food_fast.sql
       # Optional: ensure correct encoding for Vietnamese content
