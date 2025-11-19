@@ -65,10 +65,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (topbar) topbar.style.display = '';
 
     initAdminUI();
-    if (hasAdmin) {
+
+    // New role-based loading logic
+    if (hasAdmin && hasStoreOwner) {
+        // User is both Admin and Store Owner: show full UI but with owner dashboard
+        loadOwnerDashboard(); 
+    } else if (hasAdmin) {
+        // User is only Admin: show global dashboard
         loadDashboardStats();
     } else if (hasStoreOwner) {
-        // Restrict to a limited UI for store owners (Dashboard + Orders + Kitchen)
+        // User is only Store Owner: show restricted UI and owner dashboard
         try { restrictOwnerUI(); } catch(_) {}
         try { loadOwnerDashboard(); } catch(_) {}
     }
@@ -94,23 +100,14 @@ async function getOwnedStoreIds() {
     if (Array.isArray(window.OWNED_STORE_IDS) && window.OWNED_STORE_IDS.length) {
         return window.OWNED_STORE_IDS;
     }
+    // New simplified approach: no 403 probing; rely on ownerUserId field
     try {
+        const currentUser = AuthHelper.getUser();
+        const uid = currentUser?.id;
+        if (!uid) return [];
         const storesResp = await APIHelper.get(API_CONFIG.ENDPOINTS.STORES);
         const stores = Array.isArray(storesResp?.result) ? storesResp.result : (Array.isArray(storesResp) ? storesResp : []);
-        const owned = [];
-        for (const s of stores) {
-            try {
-                // Probe access via orders-by-store endpoint guarded by ownership
-                await APIHelper.get(API_CONFIG.ENDPOINTS.ORDERS_BY_STORE(s.id));
-                owned.push(s.id);
-            } catch (e) {
-                if (e && e.status === 403) {
-                    // not owned; skip
-                } else {
-                    console.warn('Probe store ownership failed', s?.id, e);
-                }
-            }
-        }
+        const owned = stores.filter(s => s.ownerUserId === uid).map(s => s.id);
         window.OWNED_STORE_IDS = owned;
         return owned;
     } catch (e) {
@@ -156,59 +153,77 @@ function restrictOwnerUI(){
 // ----- Store Owner: Dashboard revenue across owned stores -----
 async function loadOwnerDashboard() {
     try {
-        // Get list of stores and try fetching orders per store; skip stores returning 403
+        const user = AuthHelper.getUser();
+        const uid = user?.id;
+        if (!uid) throw new Error('Missing user id');
+
         const storesResp = await APIHelper.get(API_CONFIG.ENDPOINTS.STORES);
-        const stores = Array.isArray(storesResp?.result) ? storesResp.result : (Array.isArray(storesResp) ? storesResp : []);
-        const ownedStoreOrders = [];
-        let ownedStoresCount = 0;
-        for (const s of stores) {
-            try {
-                const r = await APIHelper.get(API_CONFIG.ENDPOINTS.ORDERS_BY_STORE(s.id));
-                const orders = Array.isArray(r?.result) ? r.result : (Array.isArray(r) ? r : []);
-                ownedStoreOrders.push(...orders);
-                ownedStoresCount += 1;
-            } catch (e) {
-                if (e && e.status === 403) {
-                    // not owned; ignore
-                } else {
-                    console.warn('Fetch orders for store failed', s?.id, e);
-                }
-            }
+        const allStores = Array.isArray(storesResp?.result) ? storesResp.result : (Array.isArray(storesResp) ? storesResp : []);
+        const ownedStores = allStores.filter(s => s.ownerUserId === uid);
+
+        const dashboardStoreSelector = document.getElementById('dashboardStoreSelector');
+        const dashboardStoreWrapper = document.getElementById('dashboardStoreSelectorWrapper');
+
+        if (!ownedStores.length) {
+            if(dashboardStoreWrapper) dashboardStoreWrapper.style.display = 'none';
+            document.getElementById('totalOrders').textContent = '0';
+            document.getElementById('totalRevenue').textContent = formatPrice(0);
+            document.getElementById('totalStores').textContent = '0';
+            document.getElementById('totalProducts').textContent = '0';
+            loadRecentOrders([]);
+            return;
         }
 
-        // Render stats (only using allowed orders)
-        document.getElementById('totalOrders').textContent = ownedStoreOrders.length;
+        if (dashboardStoreWrapper) {
+            if (ownedStores.length > 1) {
+                const currentVal = dashboardStoreSelector.value;
+                dashboardStoreWrapper.style.display = 'block';
+                dashboardStoreSelector.innerHTML = ownedStores.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+                if (currentVal) dashboardStoreSelector.value = currentVal;
+                dashboardStoreSelector.onchange = () => loadOwnerDashboard(); // Reload on change
+            } else {
+                dashboardStoreWrapper.style.display = 'none';
+            }
+        }
+        
+        const selectedStoreId = dashboardStoreSelector?.value ? Number(dashboardStoreSelector.value) : ownedStores[0].id;
+        const store = ownedStores.find(s => s.id === selectedStoreId) || ownedStores[0];
 
-        // Products: show total available products (not scoped) — or skip if needed
+        let orders = [];
         try {
-            const productsRes = await api.getProducts();
-            const products = productsRes.result || [];
-            document.getElementById('totalProducts').textContent = products.length;
+            const r = await APIHelper.get(API_CONFIG.ENDPOINTS.ORDERS_BY_STORE(store.id));
+            orders = Array.isArray(r?.result) ? r.result : (Array.isArray(r) ? r : []);
+        } catch (e) {
+            console.warn('Fetch store orders failed', store?.id, e);
+        }
+
+        document.getElementById('totalOrders').textContent = orders.length;
+
+        try {
+            const productsRes = await APIHelper.get(API_CONFIG.ENDPOINTS.PRODUCTS_BY_STORE(store.id));
+            const storeProducts = productsRes.result || [];
+            document.getElementById('totalProducts').textContent = storeProducts.length;
         } catch (_) {
             document.getElementById('totalProducts').textContent = '—';
         }
 
-        // Revenue: sum only PAID orders in owned stores
-        const totalRevenue = ownedStoreOrders
-            .filter(o => o.paymentStatus === 'PAID')
+        const totalRevenue = orders.filter(o => o.paymentStatus === 'PAID')
             .reduce((sum, o) => sum + (o.totalPayable || o.totalAmount || 0), 0);
         document.getElementById('totalRevenue').textContent = formatPrice(totalRevenue);
+        
+        document.getElementById('totalStores').textContent = ownedStores.length;
 
-        // Stores: number of accessible (owned) stores
-        document.getElementById('totalStores').textContent = ownedStoresCount;
-
-        // Recent orders preview (top 5 by createdAt desc if available)
-        const recent = [...ownedStoreOrders].sort((a, b) => {
-            const ta = new Date(a.createdAt || 0).getTime();
-            const tb = new Date(b.createdAt || 0).getTime();
-            return tb - ta;
-        }).slice(0, 5);
+        const recent = [...orders].sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()).slice(0, 5);
         loadRecentOrders(recent);
+
+        const storeNameEl = document.getElementById('ownerCurrentStoreName');
+        if (storeNameEl) storeNameEl.textContent = store.name || ('Store ' + store.id);
     } catch (error) {
         console.error('Error loading owner dashboard:', error);
-        // Fallback to zeros if needed
         document.getElementById('totalOrders').textContent = '0';
         document.getElementById('totalRevenue').textContent = formatPrice(0);
+        document.getElementById('totalStores').textContent = '0';
+        document.getElementById('totalProducts').textContent = '0';
     }
 }
 
@@ -403,6 +418,17 @@ function initAdminUI() {
         });
     });
 
+    // Hide Kitchen section for full ADMIN accounts per new requirement
+    try {
+        const flags = window.ADMIN_FLAGS || {};
+        if (flags.hasAdmin && !flags.hasStoreOwner) { // pure admin role
+            const kitchenLink = document.querySelector('.sidebar-link[data-section="kitchen"]');
+            if (kitchenLink) kitchenLink.style.display = 'none';
+            const kitchenSection = document.getElementById('section-kitchen');
+            if (kitchenSection) kitchenSection.style.display = 'none';
+        }
+    } catch (_) { /* ignore */ }
+
     // Sidebar toggle (mobile)
     const sidebarToggle = document.getElementById('sidebarToggle');
     const sidebar = document.querySelector('.admin-sidebar');
@@ -449,44 +475,40 @@ function switchSection(section) {
 async function setupKitchenSection() {
     const filter = document.getElementById('kitchenStoreFilter');
     const reload = document.getElementById('kitchenReloadBtn');
-    if (!filter || !reload) return; // section not visible in DOM
+    if (!filter || !reload) return;
 
-    reload.addEventListener('click', () => {
-        const storeId = filter.value ? Number(filter.value) : null;
-        if (storeId) loadKitchenQueue(storeId); else loadKitchenStoresAndQueue();
-    });
-
-    // Track last successful, authorized store to revert on 403
     if (typeof window.lastKitchenStoreId === 'undefined') {
         window.lastKitchenStoreId = null;
     }
 
-    filter.addEventListener('change', async () => {
+    reload.addEventListener('click', () => {
         const storeId = filter.value ? Number(filter.value) : null;
-        if (!storeId) return;
-        try {
-            // Probe authorization first to avoid rendering with 403
-            await APIHelper.get(API_CONFIG.ENDPOINTS.KITCHEN_QUEUE(storeId));
-            window.lastKitchenStoreId = storeId;
-            await loadKitchenQueue(storeId);
-        } catch (e) {
-            if (e && e.status === 403) {
-                Toast.warning('Bạn chỉ có quyền xem dữ liệu cửa hàng của bạn. Đã quay về lựa chọn trước.');
-                if (window.lastKitchenStoreId) {
-                    filter.value = String(window.lastKitchenStoreId);
-                    try { await loadKitchenQueue(window.lastKitchenStoreId); } catch(_) {}
-                }
-                return;
-            }
-            console.warn('Kitchen store switch failed', e);
-            Toast.error(e.message || 'Không thể tải hàng chờ bếp');
-            if (window.lastKitchenStoreId) {
-                filter.value = String(window.lastKitchenStoreId);
-            }
+        if (storeId) {
+            loadKitchenQueue(storeId).catch(() => {});
+        } else {
+            loadKitchenStoresAndQueue();
         }
     });
 
-    // initial load
+    filter.addEventListener('change', () => {
+        const sel = filter.value ? Number(filter.value) : null;
+        if (!sel) return;
+        const flags = window.ADMIN_FLAGS || {};
+        if (flags.hasStoreOwner && !flags.hasAdmin) {
+            const owned = window.OWNED_STORE_IDS || [];
+            if (!owned.includes(sel)) {
+                Toast.error('Bạn không có quyền truy cập cửa hàng này');
+                filter.value = String(window.lastKitchenStoreId || (owned.length ? owned[0] : ''));
+                return;
+            }
+        }
+        loadKitchenQueue(sel)
+            .then(() => { window.lastKitchenStoreId = sel; })
+            .catch(() => {
+                filter.value = String(window.lastKitchenStoreId || sel);
+            });
+    });
+
     await loadKitchenStoresAndQueue();
 }
 
@@ -496,32 +518,33 @@ async function loadKitchenStoresAndQueue() {
         let stores = (res && res.result) || [];
         const filter = document.getElementById('kitchenStoreFilter');
         if (!filter) return;
-
-        // If STORE_OWNER (not admin), restrict to owned stores to avoid 403 spam
         const flags = window.ADMIN_FLAGS || {};
         if (flags.hasStoreOwner && !flags.hasAdmin) {
-            const ownedIds = await getOwnedStoreIds();
-            stores = stores.filter(s => ownedIds.includes(s.id));
+            const currentUser = AuthHelper.getUser();
+            const uid = currentUser?.id;
+            stores = stores.filter(s => s.ownerUserId === uid);
+            window.OWNED_STORE_IDS = stores.map(s => s.id);
+        } else {
+            window.OWNED_STORE_IDS = null;
         }
-
         if (!stores.length) {
             filter.innerHTML = '';
             document.getElementById('kitchenQueueTable').innerHTML = `<tr><td colspan="6" style="text-align:center; color:#6B7280;">Không có cửa hàng được phép truy cập</td></tr>`;
             return;
         }
-
         filter.innerHTML = stores.map(s => `<option value="${s.id}">${s.name || ('Store ' + s.id)}</option>`).join('');
-
-        // Pick the first allowed store and load its queue
         const firstId = stores[0].id;
         filter.value = String(firstId);
+        if (flags.hasStoreOwner && !flags.hasAdmin) {
+            if (stores.length === 1) filter.setAttribute('disabled', 'disabled'); else filter.removeAttribute('disabled');
+        } else {
+            filter.removeAttribute('disabled');
+        }
         try {
-            await APIHelper.get(API_CONFIG.ENDPOINTS.KITCHEN_QUEUE(firstId));
             window.lastKitchenStoreId = firstId;
             await loadKitchenQueue(firstId);
         } catch (e) {
             if (e && e.status === 403) {
-                // Extremely unlikely because we filtered, but guard anyway
                 Toast.warning('Bạn không có quyền truy cập cửa hàng đã chọn.');
                 document.getElementById('kitchenQueueTable').innerHTML = `<tr><td colspan="6" style="text-align:center; color:#6B7280;">Không có dữ liệu</td></tr>`;
             } else {
@@ -535,13 +558,21 @@ async function loadKitchenStoresAndQueue() {
 }
 
 async function loadKitchenQueue(storeId) {
+    const tbody = document.getElementById('kitchenQueueTable');
     try {
         const res = await APIHelper.get(API_CONFIG.ENDPOINTS.KITCHEN_QUEUE(storeId));
         const orders = (res && res.result) || [];
         renderKitchenQueue(orders);
     } catch (e) {
+        if (e && e.status === 403) {
+            Toast.error('Bạn không có quyền truy cập cửa hàng này');
+            if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#6B7280;">Không được phép truy cập</td></tr>`;
+            throw e; // propagate for caller (to revert selection)
+        }
+        Toast.error('Không tải được dữ liệu bếp');
         console.warn('loadKitchenQueue error', e);
-        document.getElementById('kitchenQueueTable').innerHTML = `<tr><td colspan="6" style="text-align:center; color:#ef4444;">Không tải được hàng chờ bếp</td></tr>`;
+        if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#ef4444;">Lỗi tải dữ liệu</td></tr>`;
+        throw e;
     }
 }
 
@@ -681,7 +712,8 @@ function loadSectionData(sectionName) {
             loadOrders();
             break;
         case 'kitchen':
-            loadKitchen();
+            // Use new kitchen loading logic that enforces ownership and avoids 403 probes
+            loadKitchenStoresAndQueue();
             break;
         case 'users':
             loadUsers();

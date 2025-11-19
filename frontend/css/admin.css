@@ -125,8 +125,18 @@
 
 /* Row actions */
 .action-buttons { display: flex; gap: 8px; }
-.action-btn { width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid var(--admin-line); border-radius: 10px; background: var(--admin-surface-2); color: var(--admin-text); cursor: pointer; transition: .18s ease; }
-.action-btn:hover { transform: translateY(-1px) scale(1.02); box-shadow: var(--admin-shadow-1); }
+.action-btn { width: 36px; height: 36px; display: grid; place-items: center; border: 1px solid var(--admin-line); border-radius: 12px; background: linear-gradient(145deg, var(--admin-surface-2), color-mix(in srgb, var(--admin-surface), transparent 15%)); color: var(--admin-text); cursor: pointer; transition: .18s ease; }
+.action-btn i { font-size: 1rem; }
+.action-btn:hover { transform: translateY(-1px) scale(1.03); box-shadow: var(--admin-shadow-1); filter: brightness(1.05); }
+.action-btn:active { transform: translateY(0); box-shadow: none; }
+.action-btn.approve { color: #16a34a; border-color: color-mix(in srgb, #16a34a, transparent 70%); }
+.action-btn.reject { color: #dc2626; border-color: color-mix(in srgb, #dc2626, transparent 70%); }
+.action-btn.success { color: #0ea5e9; border-color: color-mix(in srgb, #0ea5e9, transparent 70%); }
+.action-btn.info { color: #8b5cf6; border-color: color-mix(in srgb, #8b5cf6, transparent 70%); }
+.action-btn.approve:hover { filter: brightness(1.1); }
+.action-btn.reject:hover { filter: brightness(1.1); }
+.action-btn.success:hover { filter: brightness(1.1); }
+.action-btn.info:hover { filter: brightness(1.1); }
 .table-toolbar select { background: var(--admin-surface-2); color: var(--admin-text); border: 1px solid var(--admin-line); border-radius: 10px; padding: 8px 10px; }
 .action-btn.edit { color: var(--admin-primary); }
 .action-btn.delete { color: var(--admin-danger); }

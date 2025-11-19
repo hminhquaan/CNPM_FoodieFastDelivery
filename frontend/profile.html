@@ -15,11 +15,27 @@
     #addrMap { height: 220px; border: 1px solid #eee; border-radius: 8px; }
     .form-hint { font-size: .85rem; color: var(--muted, #6b7280); margin: .25rem 0 .5rem; }
     /* Compact two-column layout specifically for profile page */
-    .profile-grid { grid-template-columns: 1fr 1fr; align-items: start; }
+    .profile-grid { grid-template-columns: 1fr 1fr; align-items: start; gap: 1.25rem; }
     @media (max-width: 900px){ .profile-grid { grid-template-columns: 1fr; } }
     /* Make form fields arrange in two columns to reduce vertical length */
-    .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
     @media (max-width: 600px){ .form-grid { grid-template-columns: 1fr; } }
+    /* Improve spacing inside cards and labels */
+    .card .card-body { display: grid; gap: 1rem; }
+    .form-group { margin: 0; }
+    .form-label { display: block; margin-bottom: 6px; color: var(--gray, #555); }
+    .form-row { display: flex; flex-wrap: wrap; gap: .5rem; }
+    /* Address list items spacing */
+    #addrList .mini-row { padding: 8px 6px; }
+    /* Modal styles (local to profile) */
+    .modal{ position:fixed; inset:0; background:rgba(0,0,0,.35); display:none; align-items:center; justify-content:center; z-index:1000 }
+    .modal-content{ background:#fff; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,.15); width:92%; max-width:760px; overflow:hidden }
+    .modal-header,.modal-footer{ padding:12px 16px; border-bottom:1px solid #eee; display:flex; align-items:center; justify-content:space-between }
+    .modal-footer{ border-top:1px solid #eee; border-bottom:none }
+    .modal-body{ padding:16px }
+    #changePwdModal .modal-content{ max-width:520px; }
+    #changePwdModal .form-grid{ grid-template-columns: 1fr; gap: 14px; }
+    #changePwdModal .form-row{ gap: .5rem; }
   </style>
 </head>
 <body>
@@ -104,6 +120,7 @@
               <div class="form-row" style="gap:.5rem;">
                 <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Lưu thay đổi</button>
                 <button type="button" id="pfRefresh" class="btn btn-outline"><i class="fas fa-rotate"></i> Tải lại</button>
+                <button type="button" id="pfChangePassword" class="btn btn-outline"><i class="fas fa-key"></i> Đổi mật khẩu</button>
               </div>
             </form>
           </div>
@@ -203,5 +220,34 @@
     })();
   </script>
   <script src="js/profile.js?v=20251111"></script>
+  <!-- Change Password Modal -->
+  <div id="changePwdModal" class="modal" style="display:none;">
+    <div class="modal-content" style="max-width:520px;">
+      <div class="modal-header">
+        <h3><i class="fas fa-key"></i> Đổi mật khẩu</h3>
+        <button class="close" onclick="(function(){document.getElementById('changePwdModal').style.display='none';})();">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="changePwdForm" class="form-grid" style="grid-template-columns:1fr;">
+          <div class="form-group">
+            <label class="form-label">Mật khẩu hiện tại</label>
+            <input type="password" id="cpCurrent" class="form-control" placeholder="Nhập mật khẩu hiện tại" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Mật khẩu mới</label>
+            <input type="password" id="cpNew" class="form-control" placeholder="Tối thiểu 6 ký tự" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Xác nhận mật khẩu mới</label>
+            <input type="password" id="cpConfirm" class="form-control" required />
+          </div>
+          <div class="form-row" style="gap:.5rem;">
+            <button type="submit" class="btn btn-primary"><i class="fas fa-check"></i> Cập nhật</button>
+            <button type="button" class="btn btn-outline" onclick="document.getElementById('changePwdModal').style.display='none'">Hủy</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
 </body>
 </html>

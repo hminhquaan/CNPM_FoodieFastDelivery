@@ -7,7 +7,7 @@
     <link rel="icon" type="image/svg+xml" href="img/favicon-admin.svg">
     <meta name="theme-color" content="#2c3e50">
     <link rel="stylesheet" href="css/style.css">
-    <link rel="stylesheet" href="css/admin.css">
+    <link rel="stylesheet" href="css/admin.css?v=20251119">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
         <!-- Leaflet for map preview -->
         <link
@@ -126,6 +126,11 @@
                 <p>Tổng quan hệ thống</p>
             </div>
 
+            <div id="dashboardStoreSelectorWrapper" style="display: none; margin-bottom: 1rem;">
+                    <label for="dashboardStoreSelector" class="form-label">Xem dashboard cho cửa hàng:</label>
+                    <select id="dashboardStoreSelector" class="form-control"></select>
+                </div>
+
             <div class="stats-grid">
                 <div class="stat-card">
                     <div class="stat-icon" style="background: #667eea;">
@@ -173,36 +178,7 @@
             </div>
         </section>
 
-        <!-- Kitchen Section -->
-        <section id="section-kitchen" class="admin-section">
-            <div class="section-header">
-                <h1>Bếp</h1>
-                <p>Hàng chờ xác nhận và đang chuẩn bị</p>
-            </div>
-            <div class="table-toolbar" style="display:flex; gap:.5rem; align-items:center; margin-bottom:.75rem; flex-wrap: wrap;">
-                <label for="kitchenStoreFilter" style="color:var(--admin-muted)">Chọn cửa hàng:</label>
-                <select id="kitchenStoreFilter" style="min-width:220px;"></select>
-                <button class="btn" id="kitchenReloadBtn"><i class="fas fa-rotate"></i> Tải lại</button>
-                <span id="kitchenHint" style="color:#6B7280; font-size:.9rem; margin-left:.5rem;">Chỉ hiển thị đơn đã thanh toán (PAID) và đã nhận (ACCEPT).</span>
-            </div>
-            <div class="table-container">
-                <table class="admin-table">
-                    <thead>
-                        <tr>
-                            <th>Mã đơn</th>
-                            <th>Khách hàng</th>
-                            <th>Thời gian</th>
-                            <th>Trạng thái</th>
-                            <th>Tổng</th>
-                            <th>Thao tác</th>
-                        </tr>
-                    </thead>
-                    <tbody id="kitchenQueueTable">
-                        <tr><td colspan="6" style="text-align:center; color:#6B7280;">Chưa có dữ liệu</td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </section>
+        
 
         <!-- Products Section -->
         <section id="section-products" class="admin-section">
@@ -869,7 +845,7 @@
             integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
             crossorigin=""
         ></script>
-    <script src="js/admin.js?v=20251111"></script>
+    <script src="js/admin.js?v=20251120_3"></script>
 </body>
 </html>
 

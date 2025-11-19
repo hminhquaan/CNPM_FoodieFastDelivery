@@ -269,10 +269,18 @@ async function updateCartBadge() {
 }
 
 // Toggle dropdown menu
-function toggleDropdown() {
+function toggleDropdown(evt) {
+    const e = evt || window.event;
+    if (e && typeof e.stopPropagation === 'function') {
+        e.stopPropagation();
+    }
     const dropdown = document.getElementById('dropdownMenu');
+    const avatar = document.getElementById('userAvatar');
     if (dropdown) {
         dropdown.classList.toggle('show');
+        if (avatar) {
+            avatar.setAttribute('aria-expanded', dropdown.classList.contains('show') ? 'true' : 'false');
+        }
     }
 }
 

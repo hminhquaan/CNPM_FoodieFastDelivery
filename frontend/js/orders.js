@@ -782,9 +782,14 @@ async function updateCartBadge() {
 }
 
 // Toggle dropdown
-function toggleDropdown() {
+function toggleDropdown(evt) {
+    try { evt?.stopPropagation?.(); } catch(_) {}
     const dropdown = document.getElementById('dropdownMenu');
-    dropdown.classList.toggle('show');
+    const avatar = document.getElementById('userAvatar');
+    if (dropdown) {
+        dropdown.classList.toggle('show');
+        if (avatar) avatar.setAttribute('aria-expanded', dropdown.classList.contains('show') ? 'true' : 'false');
+    }
 }
 
 // Logout

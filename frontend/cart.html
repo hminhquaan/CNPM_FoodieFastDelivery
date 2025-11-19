@@ -199,6 +199,22 @@
     </script>
     <script src="js/config.js?v=20251111"></script>
     <script src="js/cart.js?v=20251111"></script>
+        <style>
+            /* Enhance Address Modal sizing and spacing */
+            #addressModal .modal-content { max-width: 860px !important; }
+            #addressModal .modal-body { padding: 18px 18px 8px; }
+            #addressModal .modal-body > div { gap: 1.2rem; }
+            #addressModal #mapPicker { height: 320px !important; }
+            #addressModal #savedAddresses { max-height: 320px; }
+            #addressModal #addressSuggestions { max-height: 260px; }
+            /* Make controls breathe */
+            #addressModal .form-group { margin-bottom: .65rem; }
+            #addressModal .card-body { padding: 14px; }
+            /* Responsive: stack columns on small screens */
+            @media (max-width: 820px){
+                #addressModal .modal-body > div { display: grid; grid-template-columns: 1fr !important; }
+            }
+        </style>
     <script>
         // Minimal modal behavior using existing styles
         (function(){

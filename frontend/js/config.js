@@ -66,6 +66,7 @@ const API_CONFIG = {
         USER_ADDRESS_UPDATE: (userId, addressId) => `/api/v1/users/${userId}/addresses/${addressId}`,
         USER_ADDRESS_DELETE: (userId, addressId) => `/api/v1/users/${userId}/addresses/${addressId}`,
         USER_ADDRESS_SET_DEFAULT: (userId, addressId) => `/api/v1/users/${userId}/addresses/${addressId}/set-default`,
+        USER_DEFAULT_ADDRESS: (userId) => `/api/v1/users/${userId}/addresses/default`,
 
         // Payment
         PAYMENT_INIT: '/api/v1/payments/init',

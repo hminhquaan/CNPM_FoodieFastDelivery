@@ -24,6 +24,8 @@ let __savedAddrs = [];
 document.addEventListener('DOMContentLoaded', () => {
     checkAuthAndLoadCart();
     checkAuthStatus();
+    // Preselect default address if available
+    applyDefaultAddressIfAny();
 });
 
 // Check auth and redirect if not logged in
@@ -368,9 +370,14 @@ async function clearCart() {
 }
 
 // Toggle dropdown
-function toggleDropdown() {
+function toggleDropdown(evt) {
+    try { evt?.stopPropagation?.(); } catch(_) {}
     const dropdown = document.getElementById('dropdownMenu');
-    dropdown.classList.toggle('show');
+    const avatar = document.getElementById('userAvatar');
+    if (dropdown) {
+        dropdown.classList.toggle('show');
+        if (avatar) avatar.setAttribute('aria-expanded', dropdown.classList.contains('show') ? 'true' : 'false');
+    }
 }
 
 // Logout
@@ -612,5 +619,33 @@ function chooseSavedAddress(addrId){
         if (display){ display.textContent = `${title}: ${a.addressLine || ''}${loc ? ' - ' + loc : ''}`; }
         closeAddressModal();
     } catch(e){ console.warn('chooseSavedAddress error', e); }
+}
+
+// Auto-apply user's default address on cart load
+async function applyDefaultAddressIfAny(){
+    try {
+        if (checkoutDropoff && (checkoutDropoff.addressId || (typeof checkoutDropoff.lat==='number' && typeof checkoutDropoff.lng==='number'))) return;
+        const user = AuthHelper.getUser();
+        if (!user || !user.id) return;
+        // Try explicit default endpoint first
+        let a = null;
+        try {
+            const resp = await APIHelper.get(API_CONFIG.ENDPOINTS.USER_DEFAULT_ADDRESS(user.id));
+            a = (resp && resp.result) || resp || null;
+        } catch(_) {
+            // Fallback: fetch all and pick isDefault
+            const res = await APIHelper.get(API_CONFIG.ENDPOINTS.USER_ADDRESSES(user.id));
+            const addrs = (res && res.result) || res || [];
+            a = Array.isArray(addrs) ? addrs.find(x=>x.isDefault) || addrs[0] : null;
+        }
+        if (!a) return;
+        checkoutDropoff = { addressId: a.id, lat: a.latitude, lng: a.longitude };
+        const loc = [a.ward, a.district, a.city, a.country].filter(Boolean).join(', ');
+        const title = a.label || 'Địa chỉ mặc định';
+        const display = document.getElementById('dropoffDisplay');
+        if (display){ display.textContent = `${title}: ${a.addressLine || ''}${loc ? ' - ' + loc : ''}`; }
+    } catch (e) {
+        console.warn('applyDefaultAddressIfAny error', e);
+    }
 }
 

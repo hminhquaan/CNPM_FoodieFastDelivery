@@ -32,6 +32,10 @@
       document.getElementById('pfRefresh')?.addEventListener('click', ()=> loadProfile(u.id));
       document.getElementById('addrRefresh')?.addEventListener('click', ()=> loadAddresses(u.id));
       document.getElementById('addrForm')?.addEventListener('submit', (e)=> addAddress(e, u.id));
+      // Change password
+      document.getElementById('pfChangePassword')?.addEventListener('click', ()=> openChangePasswordModal());
+      const cpf = document.getElementById('changePwdForm');
+      cpf?.addEventListener('submit', (e)=> changePassword(e, u.id));
 
       // Setup address map + geocoding listeners
       setupAddrMap();
@@ -43,6 +47,43 @@
     } catch (e) {
       console.warn('Profile init failed', e);
       Toast.error('Không thể tải trang hồ sơ');
+    }
+  }
+
+  function openChangePasswordModal(){
+    const m = document.getElementById('changePwdModal');
+    if (m) m.style.display = 'flex';
+    try { document.getElementById('cpCurrent').value=''; document.getElementById('cpNew').value=''; document.getElementById('cpConfirm').value=''; } catch(_){ }
+  }
+
+  async function changePassword(e, userId){
+    e.preventDefault();
+    try {
+      const current = document.getElementById('cpCurrent')?.value || '';
+      const pwd = document.getElementById('cpNew')?.value || '';
+      const confirm = document.getElementById('cpConfirm')?.value || '';
+      if (pwd.length < 6){ Toast.warning('Mật khẩu mới tối thiểu 6 ký tự'); return; }
+      if (pwd !== confirm){ Toast.warning('Xác nhận mật khẩu không khớp'); return; }
+      // Build update body using existing form values to satisfy backend validation
+      const body = {
+        username: document.getElementById('pfUsername')?.value || '',
+        fullName: document.getElementById('pfFullName')?.value || '',
+        email: document.getElementById('pfEmail')?.value || '',
+        phone: document.getElementById('pfPhone')?.value || null,
+        dateOfBirth: document.getElementById('pfDob')?.value || null,
+        gender: (document.getElementById('pfGender')?.value || '').toUpperCase() || null,
+        password: pwd
+      };
+      Loading.show();
+      await APIHelper.put(API_CONFIG.ENDPOINTS.USER_UPDATE(userId), body);
+      Toast.success('Đã đổi mật khẩu');
+      const modal = document.getElementById('changePwdModal');
+      if (modal) modal.style.display = 'none';
+    } catch (err) {
+      console.warn('changePassword error', err);
+      Toast.error(err.message || 'Không thể đổi mật khẩu');
+    } finally {
+      Loading.hide();
     }
   }
 

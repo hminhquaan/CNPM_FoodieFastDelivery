@@ -354,7 +354,7 @@ async function renderDronePanel(deliveryOrNull, order){
                     <div style="display:flex; justify-content:space-between;"><span class="text-gray">Pin hiện tại:</span><span>${battery}</span></div>
                                     ${deliveryOrNull && deliveryOrNull.batteryUsedPercent != null && String(deliveryOrNull.currentStatus)==='COMPLETED' ? `<div style="display:flex; justify-content:space-between;"><span class="text-gray">Pin đã sử dụng:</span><span class="${batteryUsageClass(deliveryOrNull.batteryUsedPercent)}">${deliveryOrNull.batteryUsedPercent}%</span></div>` : ''}
                     ${deliveryOrNull && deliveryOrNull.distanceKm != null && String(deliveryOrNull.currentStatus)==='COMPLETED' ? `<div style="display:flex; justify-content:space-between;"><span class="text-gray">Quãng đường:</span><span>${FormatHelper.distance(deliveryOrNull.distanceKm)}</span></div>` : ''}
-                    ${deliveryOrNull && deliveryOrNull.actualFlightTimeSeconds != null && String(deliveryOrNull.currentStatus)==='COMPLETED' ? `<div style="display:flex; justify-content:space-between;"><span class="text-gray">Thời gian bay:</span><span>${Math.round(deliveryOrNull.actualFlightTimeSeconds/60)} phút</span></div>` : ''}
+                    ${deliveryOrNull && deliveryOrNull.actualFlightTimeSeconds != null && String(deliveryOrNull.currentStatus)==='COMPLETED' ? `<div style="display:flex; justify-content:space-between;"><span class="text-gray">Thời gian bay:</span><span>${formatFlightTime(deliveryOrNull.actualFlightTimeSeconds)}</span></div>` : ''}
                     <div style="display:flex; justify-content:space-between;"><span class="text-gray">Drone Station:</span><span>${loc}</span></div>
                     <div style="display:flex; justify-content:space-between;"><span class="text-gray">Cập nhật:</span><span>${tele}</span></div>
                 </div>`;
@@ -490,19 +490,6 @@ function renderOrderTimeline(order, delivery) {
             }).join('')}
         </div>
     `;
-
-    if (stage === 'COMPLETED' && delivery) {
-        const used = delivery.batteryUsedPercent;
-        const dist = delivery.distanceKm;
-        const secs = delivery.actualFlightTimeSeconds;
-        const parts = [];
-        if (used != null) parts.push(`<span>Pin dùng: <strong>${used}%</strong></span>`);
-        if (dist != null) parts.push(`<span>Quãng đường: <strong>${FormatHelper.distance(dist)}</strong></span>`);
-        if (secs != null) parts.push(`<span>Thời gian bay: <strong>${formatFlightTime(secs)}</strong></span>`);
-        if (parts.length) {
-            html += `<div style="margin-top:12px;padding:10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;display:flex;flex-wrap:wrap;gap:14px;font-size:.85rem">${parts.join('')}</div>`;
-        }
-    }
 
     container.innerHTML = html;
 }
@@ -737,9 +724,14 @@ function checkAuthStatus() {
     }
 }
 
-function toggleDropdown() {
+function toggleDropdown(evt) {
+    try { evt?.stopPropagation?.(); } catch(_) {}
     const dropdown = document.getElementById('dropdownMenu');
-    if (dropdown) dropdown.classList.toggle('show');
+    const avatar = document.getElementById('userAvatar');
+    if (dropdown) {
+        dropdown.classList.toggle('show');
+        if (avatar) avatar.setAttribute('aria-expanded', dropdown.classList.contains('show') ? 'true' : 'false');
+    }
 }
 
 function logout() {
