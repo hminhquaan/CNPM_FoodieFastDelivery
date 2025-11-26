@@ -311,9 +311,16 @@ public class OrderServiceImpl implements OrderService {
         if (statusFilter != null) {
             statuses = java.util.Collections.singletonList(statusFilter);
         } else {
-            statuses = java.util.Arrays.asList(OrderStatus.PAID, OrderStatus.PREPARING, OrderStatus.ACCEPT);
+            // Include CREATED and PENDING_PAYMENT to allow kitchen to see new orders (e.g. COD)
+            statuses = java.util.Arrays.asList(
+                    OrderStatus.CREATED,
+                    OrderStatus.PENDING_PAYMENT,
+                    OrderStatus.PAID,
+                    OrderStatus.PREPARING,
+                    OrderStatus.ACCEPT
+            );
         }
-        List<Order> orders = orderRepository.findKitchenQueue(storeId, PaymentStatus.PAID, statuses);
+        List<Order> orders = orderRepository.findKitchenQueue(storeId, statuses);
         return orders.stream()
                 .map(this::buildOrderResponse)
                 .collect(Collectors.toList());
@@ -389,13 +396,14 @@ public class OrderServiceImpl implements OrderService {
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
 
         // Kiểm tra: chỉ orders đã thanh toán mới được chấp nhận
-        if (order.getPaymentStatus() != PaymentStatus.PAID) {
-            throw new BadRequestException("Only paid orders can be accepted. Payment status: " + order.getPaymentStatus());
+        // Relaxed: Allow PENDING payment if status is CREATED/PENDING_PAYMENT (e.g. COD or manual confirm)
+        if (order.getPaymentStatus() != PaymentStatus.PAID && order.getPaymentStatus() != PaymentStatus.PENDING) {
+            throw new BadRequestException("Only paid or pending orders can be accepted. Payment status: " + order.getPaymentStatus());
         }
 
-        // Kiểm tra trạng thái hiện tại - phải là PAID
-        if (order.getStatus() != OrderStatus.PAID) {
-            throw new BadRequestException("Order must be in PAID status to be accepted. Current status: " + order.getStatus());
+        // Kiểm tra trạng thái hiện tại - phải là PAID hoặc CREATED/PENDING_PAYMENT
+        if (order.getStatus() != OrderStatus.PAID && order.getStatus() != OrderStatus.CREATED && order.getStatus() != OrderStatus.PENDING_PAYMENT) {
+            throw new BadRequestException("Order must be in PAID/CREATED/PENDING_PAYMENT status to be accepted. Current status: " + order.getStatus());
         }
 
         // Sau khi cửa hàng chấp nhận, chuyển sang PREPARING (đang chế biến)

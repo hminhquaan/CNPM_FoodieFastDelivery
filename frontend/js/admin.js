@@ -527,82 +527,55 @@ async function loadKitchenStoresAndQueue() {
         } else {
             window.OWNED_STORE_IDS = null;
         }
+        
+        const tbody = document.getElementById('kitchenTableBody'); // Use correct table body ID
+
         if (!stores.length) {
-            filter.innerHTML = '';
-            document.getElementById('kitchenQueueTable').innerHTML = `<tr><td colspan="6" style="text-align:center; color:#6B7280;">Không có cửa hàng được phép truy cập</td></tr>`;
+            filter.innerHTML = '<option value="">Không có cửa hàng</option>';
+            if (tbody) tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:#6B7280;">Không có cửa hàng được phép truy cập</td></tr>`;
             return;
         }
+        
+        // Populate filter
         filter.innerHTML = stores.map(s => `<option value="${s.id}">${s.name || ('Store ' + s.id)}</option>`).join('');
+        filter.dataset.filled = 'true'; // Mark as filled to prevent ensureKitchenFilters from reloading
+        
+        // Bind change event
+        filter.onchange = () => loadKitchen();
+
+        // Auto-select first store
         const firstId = stores[0].id;
         filter.value = String(firstId);
+        
         if (flags.hasStoreOwner && !flags.hasAdmin) {
             if (stores.length === 1) filter.setAttribute('disabled', 'disabled'); else filter.removeAttribute('disabled');
         } else {
             filter.removeAttribute('disabled');
         }
-        try {
-            window.lastKitchenStoreId = firstId;
-            await loadKitchenQueue(firstId);
-        } catch (e) {
-            if (e && e.status === 403) {
-                Toast.warning('Bạn không có quyền truy cập cửa hàng đã chọn.');
-                document.getElementById('kitchenQueueTable').innerHTML = `<tr><td colspan="6" style="text-align:center; color:#6B7280;">Không có dữ liệu</td></tr>`;
-            } else {
-                throw e;
-            }
-        }
+        
+        // Load kitchen queue using the main loadKitchen function
+        await loadKitchen();
+
     } catch (e) {
         console.warn('loadKitchenStores failed', e);
-        document.getElementById('kitchenQueueTable').innerHTML = `<tr><td colspan="6" style="text-align:center; color:#ef4444;">Không tải được danh sách cửa hàng</td></tr>`;
+        const tbody = document.getElementById('kitchenTableBody');
+        if (tbody) tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:#ef4444;">Không tải được danh sách cửa hàng</td></tr>`;
     }
 }
 
+// Deprecated/Legacy functions - kept for safety but redirected to use correct table if called
 async function loadKitchenQueue(storeId) {
-    const tbody = document.getElementById('kitchenQueueTable');
-    try {
-        const res = await APIHelper.get(API_CONFIG.ENDPOINTS.KITCHEN_QUEUE(storeId));
-        const orders = (res && res.result) || [];
-        renderKitchenQueue(orders);
-    } catch (e) {
-        if (e && e.status === 403) {
-            Toast.error('Bạn không có quyền truy cập cửa hàng này');
-            if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#6B7280;">Không được phép truy cập</td></tr>`;
-            throw e; // propagate for caller (to revert selection)
-        }
-        Toast.error('Không tải được dữ liệu bếp');
-        console.warn('loadKitchenQueue error', e);
-        if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#ef4444;">Lỗi tải dữ liệu</td></tr>`;
-        throw e;
+    // Redirect to loadKitchen if possible, or just log warning
+    console.warn('loadKitchenQueue is deprecated. Use loadKitchen() instead.');
+    const filter = document.getElementById('kitchenStoreFilter');
+    if (filter && filter.value != storeId) {
+        filter.value = storeId;
     }
+    return loadKitchen();
 }
 
 function renderKitchenQueue(orders) {
-    const tbody = document.getElementById('kitchenQueueTable');
-    if (!tbody) return;
-    if (!orders.length) {
-        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#6B7280;">Không có đơn nào trong hàng chờ</td></tr>`;
-        return;
-    }
-    tbody.innerHTML = orders.map(o => {
-        const canAccept = o.status === 'PAID';
-        const canKitchenComplete = o.status === 'PREPARING' || o.status === 'ACCEPT';
-        const actions = canAccept
-            ? `<button class="btn btn-primary btn-sm" onclick="kitchenAccept(this, ${o.id})" title="Nhận đơn"><i class=\"fas fa-check\"></i> Nhận đơn</button>
-               <button class="btn btn-outline btn-sm" onclick="kitchenReject(this, ${o.id})" title="Từ chối"><i class=\"fas fa-times\"></i> Từ chối</button>`
-            : (canKitchenComplete
-                ? `<button class="btn btn-success btn-sm" onclick="kitchenComplete(this, ${o.id})" title="Hoàn thành món"><i class=\"fas fa-utensils\"></i> Hoàn thành món</button>`
-                : '');
-        
-        return `
-            <tr>
-                <td><strong>${o.orderCode || ('ORD' + o.id)}</strong></td>
-                <td>${o.customerName || '-'}</td>
-                <td>${FormatHelper.date(o.createdAt)}</td>
-                <td><span class="status-badge ${getStatusClass(o.status)}">${getStatusText(o.status)}</span></td>
-                <td>${FormatHelper.currency(o.totalPayable || 0)}</td>
-                <td style="white-space:nowrap; display:flex; gap:.5rem;">${actions}</td>
-            </tr>`;
-    }).join('');
+    // Deprecated
 }
 
 async function kitchenAccept(btn, orderId) {
