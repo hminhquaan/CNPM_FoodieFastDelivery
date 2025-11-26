@@ -48,7 +48,7 @@ public class Store {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
-    StoreStatus storeStatus;
+    StoreStatus status;
 
     @Column(name = "created_at", updatable = false, insertable = false)
     LocalDateTime createdAt;

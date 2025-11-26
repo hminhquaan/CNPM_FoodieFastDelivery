@@ -8,6 +8,9 @@ import entity.*;
 import enums.CartStatus;
 import enums.OrderStatus;
 import enums.PaymentStatus;
+import enums.ProductStatus;
+import enums.StoreStatus;
+import enums.UserStatus;
 import exception.ResourceNotFoundException;
 import exception.BadRequestException;
 import repository.product.ProductRepository;
@@ -64,11 +67,14 @@ public class OrderServiceImpl implements OrderService {
         log.info("Creating orders from cart for authenticated user: {}", username);
 
         try {
-            // 1. Lấy userId từ username
-            Long userId = userRepository.findIdByUsername(username);
-            if (userId == null) {
-                throw new ResourceNotFoundException("User not found: " + username);
+            // 1. Lấy user từ username và kiểm tra status
+            User user = userRepository.findByUsername(username)
+                    .orElseThrow(() -> new ResourceNotFoundException("User not found: " + username));
+
+            if (user.getStatus() != UserStatus.ACTIVE) {
+                throw new BadRequestException("User is not active. Cannot place order.");
             }
+            Long userId = user.getId();
 
             log.info("Found user with ID: {}", userId);
 
@@ -101,6 +107,10 @@ public class OrderServiceImpl implements OrderService {
                 Store store = storeRepository.findById(storeId)
                         .orElseThrow(() -> new ResourceNotFoundException("Store not found: " + storeId));
 
+                if (store.getStatus() != StoreStatus.ACTIVE) {
+                    throw new BadRequestException("Store is not active: " + store.getName());
+                }
+
                 // Tạo order code
                 String orderCode = generateOrderCode();
                 BigDecimal totalItemAmount = BigDecimal.ZERO;
@@ -130,6 +140,10 @@ public class OrderServiceImpl implements OrderService {
                 // Tạo order items
                 for (CartItem cartItem : storeItems) {
                     Product product = cartItem.getProduct();
+
+                    if (product.getStatus() != ProductStatus.ACTIVE) {
+                        throw new BadRequestException("Product is not active: " + product.getName());
+                    }
 
                     // Kiểm tra tồn kho
                     if (product.getQuantityAvailable() < cartItem.getQuantity()) {

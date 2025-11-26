@@ -58,14 +58,14 @@ public class DebugSeedController {
                     .ownerUserId(owner.getId())
                     .name("Pizza Planet")
                     .description("Pizza nóng giòn và nhiều topping")
-                    .storeStatus(StoreStatus.ACTIVE)
+                    .status(StoreStatus.ACTIVE)
                     .build());
 
             Store sushiHouse = storeRepository.save(Store.builder()
                     .ownerUserId(owner.getId())
                     .name("Sushi House")
                     .description("Sushi tươi ngon mỗi ngày")
-                    .storeStatus(StoreStatus.ACTIVE)
+                    .status(StoreStatus.ACTIVE)
                     .build());
 
             // Attach products

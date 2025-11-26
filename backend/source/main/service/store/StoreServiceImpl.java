@@ -51,7 +51,7 @@ public class StoreServiceImpl implements StoreService {
                 .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_EXISTED));
 
         Store store = storeMapper.toStore(request);
-        store.setStoreStatus(StoreStatus.ACTIVE);
+        store.setStatus(StoreStatus.ACTIVE);
         store = storeRepository.save(store);
 
         return storeMapper.toStoreResponse(store);
@@ -95,7 +95,7 @@ public class StoreServiceImpl implements StoreService {
         }
 
         // Soft delete by changing status
-        store.setStoreStatus(StoreStatus.INACTIVE);
+        store.setStatus(StoreStatus.INACTIVE);
         storeRepository.save(store);
     }
 
@@ -113,7 +113,7 @@ public class StoreServiceImpl implements StoreService {
     public List<StoreResponse> getAllStores() {
         log.info("Getting all active stores");
 
-        List<Store> stores = storeRepository.findByStoreStatus(StoreStatus.ACTIVE);
+        List<Store> stores = storeRepository.findByStatus(StoreStatus.ACTIVE);
         return stores.stream()
                 .map(storeMapper::toStoreResponse)
                 .collect(Collectors.toList());
@@ -141,7 +141,7 @@ public class StoreServiceImpl implements StoreService {
         Store store = storeRepository.findById(storeId)
                 .orElseThrow(() -> new AppException(ErrorCode.STORE_NOT_EXISTED));
 
-        store.setStoreStatus(status);
+        store.setStatus(status);
         store = storeRepository.save(store);
 
         return storeMapper.toStoreResponse(store);
@@ -151,7 +151,7 @@ public class StoreServiceImpl implements StoreService {
     public List<StoreResponse> searchStores(String keyword) {
         log.info("Searching active stores with keyword: {}", keyword);
 
-        List<Store> stores = storeRepository.findByNameContainingIgnoreCaseAndStoreStatus(keyword, StoreStatus.ACTIVE);
+        List<Store> stores = storeRepository.findByNameContainingIgnoreCaseAndStatus(keyword, StoreStatus.ACTIVE);
         return stores.stream()
                 .map(storeMapper::toStoreResponse)
                 .collect(Collectors.toList());
@@ -166,7 +166,7 @@ public class StoreServiceImpl implements StoreService {
         Store store = storeRepository.findById(storeId)
                 .orElseThrow(() -> new ResourceNotFoundException("Store not found with id: " + storeId));
 
-        if (store.getStoreStatus() != StoreStatus.ACTIVE) {
+        if (store.getStatus() != StoreStatus.ACTIVE) {
             throw new ResourceNotFoundException("Store not found (inactive) with id: " + storeId);
         }
 
@@ -189,7 +189,7 @@ public class StoreServiceImpl implements StoreService {
         Store store = storeRepository.findById(product.getStore().getId())
                 .orElseThrow(() -> new ResourceNotFoundException("Store not found with id: " + product.getStore().getId()));
 
-        if (store.getStoreStatus() != StoreStatus.ACTIVE) {
+        if (store.getStatus() != StoreStatus.ACTIVE) {
             throw new ResourceNotFoundException("Store not found (inactive) with id: " + store.getId());
         }
 
@@ -220,7 +220,7 @@ public class StoreServiceImpl implements StoreService {
                 .bankName(store.getBankName())
                 .bankBranch(store.getBankBranch())
                 .payoutEmail(store.getPayoutEmail())
-                .storeStatus(store.getStoreStatus())
+                .storeStatus(store.getStatus())
                 .createdAt(store.getCreatedAt())
                 .updatedAt(store.getUpdatedAt())
                 .products(productResponses)

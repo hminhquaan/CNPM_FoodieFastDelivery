@@ -14,7 +14,7 @@ public interface StoreRepository extends JpaRepository<Store,Long> {
     
     List<Store> findByNameContainingIgnoreCase(String name);
     
-    List<Store> findByStoreStatus(StoreStatus status);
+    List<Store> findByStatus(StoreStatus status);
 
-    List<Store> findByNameContainingIgnoreCaseAndStoreStatus(String name, StoreStatus status);
+    List<Store> findByNameContainingIgnoreCaseAndStatus(String name, StoreStatus status);
 }

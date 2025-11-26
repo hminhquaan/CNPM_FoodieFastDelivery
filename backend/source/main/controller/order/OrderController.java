@@ -196,6 +196,17 @@ public class OrderController {
     public ResponseEntity<APIResponse<Void>> cancelOrder(@PathVariable Long orderId) {
         log.info("Cancelling order: {}", orderId);
 
+        // Check ownership
+        OrderResponse order = orderService.getOrderById(orderId);
+        Long currentUserId = getCurrentUserId();
+        java.util.Set<String> roles = getCurrentRoles();
+
+        if (!isAdmin(roles)) {
+             if (currentUserId == null || !currentUserId.equals(order.getUserId())) {
+                 throw new org.springframework.security.access.AccessDeniedException("You can only cancel your own orders");
+             }
+        }
+
         orderService.cancelOrder(orderId);
 
         return ResponseEntity.ok(APIResponse.<Void>builder()
@@ -213,6 +224,10 @@ public class OrderController {
             @PathVariable Long orderId,
             @Valid @RequestBody UpdateOrderStatusRequest request) {
         log.info("Updating order {} status to: {}", orderId, request.getStatus());
+
+        // Check store access (Admin or Store Owner)
+        OrderResponse order = orderService.getOrderById(orderId);
+        assertStoreAccess(order.getStoreId());
 
         OrderResponse response = orderService.updateOrderStatus(orderId, request);
 
