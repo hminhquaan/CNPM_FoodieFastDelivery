@@ -49,10 +49,10 @@ public class User {
     @Builder.Default
     UserStatus status = UserStatus.ACTIVE;
 
-    @Column(name = "created_at", updatable = false, insertable = false)
+    @Column(name = "created_at", updatable = false)
     LocalDateTime createdAt;
 
-    @Column(name = "updated_at", insertable = false, updatable = false)
+    @Column(name = "updated_at")
     LocalDateTime updatedAt;
 
     @Column(name = "date_of_birth")

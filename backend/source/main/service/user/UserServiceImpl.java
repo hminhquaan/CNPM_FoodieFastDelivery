@@ -21,6 +21,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -46,6 +47,8 @@ public class UserServiceImpl implements UserService {
 
         // Status mặc định
         user.setStatus(UserStatus.ACTIVE);
+        user.setCreatedAt(LocalDateTime.now());
+        user.setUpdatedAt(LocalDateTime.now());
 
         // Gán roles cho user
         if (request.getRoleIds() != null && !request.getRoleIds().isEmpty()) {
@@ -81,6 +84,8 @@ public class UserServiceImpl implements UserService {
         if (incomingPassword != null && !incomingPassword.isBlank()) {
             user.setPasswordHash(passwordEncoder.encode(incomingPassword));
         }
+        
+        user.setUpdatedAt(LocalDateTime.now());
 
         // Update roles nếu có roleIds trong request
         if (request.getRoleIds() != null && !request.getRoleIds().isEmpty()) {
@@ -108,7 +113,9 @@ public class UserServiceImpl implements UserService {
     public String deleteUser(String userId) {
         User user = userRepository.findById(Long.valueOf(userId))
                 .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_EXISTED));
-        userRepository.delete(user);
+        // Soft delete
+        user.setStatus(UserStatus.INACTIVE);
+        userRepository.save(user);
         return "User deleted successfully";
     }
 

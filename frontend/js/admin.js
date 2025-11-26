@@ -1374,8 +1374,16 @@ async function saveUser() {
     const rolesSel = document.getElementById('userRolesSelect');
     const roleArray = Array.from(rolesSel?.selectedOptions || []).map(o => o.value);
 
+    // Map string roles to IDs
+    const roleMap = {
+        'USER': 1,
+        'STORE_OWNER': 2,
+        'ADMIN': 3
+    };
+    const roleIds = roleArray.map(r => roleMap[r]).filter(id => id);
+
     // Backend expects UserCreationRequest; adapt keys accordingly (roleIds optional)
-    const body = { username, email, phone, fullName, roleIds: roleArray.length ? roleArray.map(r=>parseInt(r,10)).filter(n=>!isNaN(n)) : null };
+    const body = { username, email, phone, fullName, roleIds: roleIds.length ? roleIds : null };
     try {
         if (id) {
             if (password) body.password = password; // only update password if provided

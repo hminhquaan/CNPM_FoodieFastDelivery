@@ -8,12 +8,14 @@ import dto.response.store.StoreWithProductsResponse;
 import entity.Product;
 import entity.Store;
 import entity.User;
+import enums.OrderStatus;
 import enums.ProductStatus;
 import enums.StoreStatus;
 import exception.AppException;
 import exception.ErrorCode;
 import exception.ResourceNotFoundException;
 import mapper.StoreMapper;
+import repository.order.OrderRepository;
 import repository.product.ProductRepository;
 import repository.store.StoreRepository;
 import repository.user.UserRepository;
@@ -23,6 +25,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -34,8 +37,9 @@ public class StoreServiceImpl implements StoreService {
     private final StoreRepository storeRepository;
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
-        private final StoreMapper storeMapper;
-        private final ProductService productService;
+    private final OrderRepository orderRepository;
+    private final StoreMapper storeMapper;
+    private final ProductService productService;
 
     @Override
     @Transactional
@@ -76,6 +80,20 @@ public class StoreServiceImpl implements StoreService {
         Store store = storeRepository.findById(storeId)
                 .orElseThrow(() -> new AppException(ErrorCode.STORE_NOT_EXISTED));
 
+        // Check for active orders
+        List<OrderStatus> activeStatuses = Arrays.asList(
+                OrderStatus.CREATED,
+                OrderStatus.PENDING_PAYMENT,
+                OrderStatus.PAID,
+                OrderStatus.PREPARING,
+                OrderStatus.IN_DELIVERY,
+                OrderStatus.ACCEPT
+        );
+
+        if (orderRepository.existsByStoreIdAndStatusIn(storeId, activeStatuses)) {
+            throw new AppException(ErrorCode.CANNOT_DELETE_STORE_WITH_ACTIVE_ORDERS);
+        }
+
         // Soft delete by changing status
         store.setStoreStatus(StoreStatus.INACTIVE);
         storeRepository.save(store);
@@ -93,9 +111,9 @@ public class StoreServiceImpl implements StoreService {
 
     @Override
     public List<StoreResponse> getAllStores() {
-        log.info("Getting all stores");
+        log.info("Getting all active stores");
 
-        List<Store> stores = storeRepository.findAll();
+        List<Store> stores = storeRepository.findByStoreStatus(StoreStatus.ACTIVE);
         return stores.stream()
                 .map(storeMapper::toStoreResponse)
                 .collect(Collectors.toList());
@@ -131,9 +149,9 @@ public class StoreServiceImpl implements StoreService {
 
     @Override
     public List<StoreResponse> searchStores(String keyword) {
-        log.info("Searching stores with keyword: {}", keyword);
+        log.info("Searching active stores with keyword: {}", keyword);
 
-        List<Store> stores = storeRepository.findByNameContainingIgnoreCase(keyword);
+        List<Store> stores = storeRepository.findByNameContainingIgnoreCaseAndStoreStatus(keyword, StoreStatus.ACTIVE);
         return stores.stream()
                 .map(storeMapper::toStoreResponse)
                 .collect(Collectors.toList());
@@ -148,8 +166,12 @@ public class StoreServiceImpl implements StoreService {
         Store store = storeRepository.findById(storeId)
                 .orElseThrow(() -> new ResourceNotFoundException("Store not found with id: " + storeId));
 
+        if (store.getStoreStatus() != StoreStatus.ACTIVE) {
+            throw new ResourceNotFoundException("Store not found (inactive) with id: " + storeId);
+        }
+
         // Get all products of this store
-        List<Product> products = productRepository.findByStoreId(storeId);
+        List<Product> products = productRepository.findByStoreIdAndStatus(storeId, ProductStatus.ACTIVE);
 
         return buildStoreWithProductsResponse(store, products);
     }
@@ -167,8 +189,12 @@ public class StoreServiceImpl implements StoreService {
         Store store = storeRepository.findById(product.getStore().getId())
                 .orElseThrow(() -> new ResourceNotFoundException("Store not found with id: " + product.getStore().getId()));
 
+        if (store.getStoreStatus() != StoreStatus.ACTIVE) {
+            throw new ResourceNotFoundException("Store not found (inactive) with id: " + store.getId());
+        }
+
         // Get all products of this store
-        List<Product> products = productRepository.findByStoreId(store.getId());
+        List<Product> products = productRepository.findByStoreIdAndStatus(store.getId(), ProductStatus.ACTIVE);
 
         return buildStoreWithProductsResponse(store, products);
     }

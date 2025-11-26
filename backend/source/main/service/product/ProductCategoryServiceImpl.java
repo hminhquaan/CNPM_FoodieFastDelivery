@@ -60,12 +60,14 @@ public class ProductCategoryServiceImpl implements ProductCategoryService {
         ProductCategory productCategory = productCategoryRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.CATEGORY_NOT_EXISTED));
 
-        productCategoryRepository.delete(productCategory);
+        // Soft delete
+        productCategory.setStatus(CategoryStatus.INACTIVE);
+        productCategoryRepository.save(productCategory);
     }
 
     @Override
     public List<ProductCategoryResponse> getAllCategories() {
-        List<ProductCategory> categories = productCategoryRepository.findAll();
+        List<ProductCategory> categories = productCategoryRepository.findAllByStatus(CategoryStatus.ACTIVE);
         return productCategoryMapper.toProductCategoryResponse(categories);
     }
 

@@ -48,6 +48,7 @@ public enum ErrorCode {
     DELIVERY_NOT_FOUND(1034, "Delivery not found", HttpStatus.NOT_FOUND),
     DELIVERY_ALREADY_EXISTS(1035, "Delivery already exists for this order", HttpStatus.BAD_REQUEST),
     DELIVERY_ALREADY_ASSIGNED(1036, "Delivery is already assigned to a drone", HttpStatus.BAD_REQUEST),
+    CANNOT_DELETE_STORE_WITH_ACTIVE_ORDERS(1041, "Cannot delete store with active orders", HttpStatus.BAD_REQUEST),
     DRONE_NOT_AVAILABLE(1037, "Drone is not available", HttpStatus.BAD_REQUEST),
     ORDER_NOT_PAID(1038, "Order has not been paid yet", HttpStatus.BAD_REQUEST),
     INVALID_STATUS_TRANSITION(1039, "Invalid delivery status transition", HttpStatus.BAD_REQUEST),

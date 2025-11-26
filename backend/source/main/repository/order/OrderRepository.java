@@ -25,6 +25,8 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 
     List<Order> findByUserIdAndStatus(Long userId, OrderStatus status);
 
+    boolean existsByStoreIdAndStatusIn(Long storeId, List<OrderStatus> statuses);
+
     // Kitchen queue: orders of a store that have been paid and awaiting or in acceptance
     @Query("SELECT o FROM Order o WHERE o.storeId = :storeId AND o.paymentStatus = :paymentStatus AND o.status IN :statuses ORDER BY o.createdAt ASC")
     List<Order> findKitchenQueue(@Param("storeId") Long storeId,

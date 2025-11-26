@@ -81,7 +81,9 @@ public class ProductServiceImpl  implements ProductService {
     public void delete(Long productId) {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new AppException(ErrorCode.PRODUCT_NOT_EXISTED));
-        productRepository.delete(product);
+        // Soft delete
+        product.setStatus(ProductStatus.INACTIVE);
+        productRepository.save(product);
     }
 
     @Override
@@ -97,7 +99,7 @@ public class ProductServiceImpl  implements ProductService {
         categoryRepository.findById(categoryId)
                 .orElseThrow(() -> new AppException(ErrorCode.CATEGORY_NOT_EXISTED));
         
-        List<Product> products = productRepository.findByCategoryId(categoryId);
+        List<Product> products = productRepository.findByCategoryIdAndStatus(categoryId, ProductStatus.ACTIVE);
         return productMapper.toProductResponse(products);
     }
 
@@ -107,19 +109,19 @@ public class ProductServiceImpl  implements ProductService {
         storeRepository.findById(storeId)
                 .orElseThrow(() -> new AppException(ErrorCode.STORE_NOT_EXISTED));
         
-        List<Product> products = productRepository.findByStoreId(storeId);
+        List<Product> products = productRepository.findByStoreIdAndStatus(storeId, ProductStatus.ACTIVE);
         return productMapper.toProductResponse(products);
     }
 
     @Override
     public List<ProductResponse> getAll() {
-        List<Product> products = productRepository.findAll();
+        List<Product> products = productRepository.findAllByStatus(ProductStatus.ACTIVE);
         return productMapper.toProductResponse(products);
     }
 
     @Override
     public List<ProductResponse> searchProducts(String keyword) {
-        List<Product> products = productRepository.findByNameContainingIgnoreCaseOrDescriptionContainingIgnoreCase(keyword, keyword);
+        List<Product> products = productRepository.findByNameContainingIgnoreCaseOrDescriptionContainingIgnoreCaseAndStatus(keyword, keyword, ProductStatus.ACTIVE);
         return productMapper.toProductResponse(products);
     }
 }
