@@ -8,7 +8,7 @@ spring:
     # Chú ý: Dòng url này rất dài, hãy để nó nằm trên 1 dòng duy nhất, đừng tự xuống dòng
     url: jdbc:mysql://localhost:3306/fast_food_delivery?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC&useLegacyDatetimeCode=false&allowPublicKeyRetrieval=true&useUnicode=true&characterEncoding=UTF-8
     username: root
-    password: quan0931848972
+    password: tinle
     driver-class-name: com.mysql.cj.jdbc.Driver
   jpa:
     hibernate:
