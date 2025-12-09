@@ -234,6 +234,10 @@ let storeAddressMarker = null;
 function ensureStoreAddressMap() {
     const mapEl = document.getElementById('storeAddressMap');
     if (!mapEl) return;
+    if (typeof L === 'undefined') {
+        mapEl.innerHTML = '<p style="color:#666; text-align:center; padding:2rem;">Bản đồ chưa tải được (Lỗi thư viện Leaflet)</p>';
+        return;
+    }
     if (!storeAddressMap) {
         // Default center: Ho Chi Minh City
         storeAddressMap = L.map('storeAddressMap').setView([10.776, 106.700], 12);
@@ -2246,29 +2250,22 @@ async function manageStoreAddresses(storeId) {
 async function renderStoreAddresses(storeId) {
     const listEl = document.getElementById('storeAddressesList');
     if (!listEl) return;
+    
+    // Rebind add button using onclick to replace previous handler
+    const addBtn = document.getElementById('addStoreAddressBtn');
+    if (addBtn) {
+        addBtn.onclick = () => openAddStoreAddress(storeId);
+    }
+
     try {
         const resp = await api.getStoreAddresses(storeId);
         const addresses = resp.result || resp || [];
         if (!Array.isArray(addresses) || addresses.length === 0) {
             listEl.innerHTML = '<p style="color:#666; font-size:.85rem; margin:.5rem 0;">Chưa có địa chỉ nào.</p>';
-            // Bind add button still
-            const addBtn = document.getElementById('addStoreAddressBtn');
-            addBtn?.addEventListener('click', () => openAddStoreAddress(storeId));
             return;
         }
-        listEl.innerHTML = addresses.map(a => `
-            <div class=\"store-address-row\" style=\"display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid #f0f0f0; padding:.35rem 0;\">
-                <div style=\"flex:1; min-width:0;\">
-                    <strong>#${a.id}</strong> ${a.addressLine || ''}
-                    <small style=\"display:block; color:#888;\">${[a.ward,a.district,a.city].filter(Boolean).join(', ')}${a.latitude?` | (${(a.latitude).toFixed(5)},${a.longitude? (a.longitude).toFixed(5): ''})`:''}</small>
-                </div>
-                <div style=\"display:flex; gap:.4rem;\">
-                    <button class=\"action-btn\" title=\"Sửa\" onclick='openEditStoreAddress(${storeId}, ${JSON.stringify({id:"${'${a.id}'}"})})'><i class=\"fas fa-edit\"></i></button>
-                    <button class=\"action-btn delete\" title=\"Xóa\" onclick=\"deleteStoreAddress(${storeId}, ${'${a.id}'} )\"><i class=\"fas fa-trash\"></i></button>
-                </div>
-            </div>`).join('');
-        // Because of template escaping above, rebind edit buttons using programmatic approach:
-        // Replace with safer rendering approach
+        
+        // Clear list
         listEl.innerHTML = '';
         addresses.forEach(a => {
             const row = document.createElement('div');
@@ -2296,8 +2293,6 @@ async function renderStoreAddresses(storeId) {
             row.appendChild(actions);
             listEl.appendChild(row);
         });
-        const addBtn = document.getElementById('addStoreAddressBtn');
-        addBtn?.addEventListener('click', () => openAddStoreAddress(storeId));
     } catch (e) {
         listEl.innerHTML = '<p style="color:#c00; font-size:.85rem;">Lỗi tải địa chỉ</p>';
     }

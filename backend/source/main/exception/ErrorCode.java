@@ -52,7 +52,8 @@ public enum ErrorCode {
     DRONE_NOT_AVAILABLE(1037, "Drone is not available", HttpStatus.BAD_REQUEST),
     ORDER_NOT_PAID(1038, "Order has not been paid yet", HttpStatus.BAD_REQUEST),
     INVALID_STATUS_TRANSITION(1039, "Invalid delivery status transition", HttpStatus.BAD_REQUEST),
-    ORDER_NOT_EXISTED(1040, "Order not existed", HttpStatus.NOT_FOUND);
+    ORDER_NOT_EXISTED(1040, "Order not existed", HttpStatus.NOT_FOUND),
+    CANNOT_DELETE_PRODUCT_WITH_ORDERS(1042, "Cannot delete product with existing orders", HttpStatus.BAD_REQUEST);
 
 
     int code;

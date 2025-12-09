@@ -13,6 +13,7 @@ import mapper.ProductMapper;
 import repository.product.ProductCategoryRepository;
 import repository.product.ProductRepository;
 import repository.store.StoreRepository;
+import repository.order.OrderItemRepository;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
@@ -29,6 +30,7 @@ public class ProductServiceImpl  implements ProductService {
     ProductRepository productRepository;
     ProductCategoryRepository categoryRepository;
     StoreRepository storeRepository;
+    OrderItemRepository orderItemRepository;
     ProductMapper productMapper;
 
     @Override
@@ -81,6 +83,12 @@ public class ProductServiceImpl  implements ProductService {
     public void delete(Long productId) {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new AppException(ErrorCode.PRODUCT_NOT_EXISTED));
+        
+        // Check if product is in any order
+        if (orderItemRepository.existsByProductId(productId)) {
+            throw new AppException(ErrorCode.CANNOT_DELETE_PRODUCT_WITH_ORDERS);
+        }
+
         // Soft delete
         product.setStatus(ProductStatus.INACTIVE);
         productRepository.save(product);

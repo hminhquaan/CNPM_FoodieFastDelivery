@@ -5,6 +5,7 @@ import dto.request.store.StorePaymentRequest;
 import dto.response.product.ProductResponse;
 import dto.response.store.StoreResponse;
 import dto.response.store.StoreWithProductsResponse;
+import entity.Order;
 import entity.Product;
 import entity.Store;
 import entity.User;
@@ -80,18 +81,18 @@ public class StoreServiceImpl implements StoreService {
         Store store = storeRepository.findById(storeId)
                 .orElseThrow(() -> new AppException(ErrorCode.STORE_NOT_EXISTED));
 
-        // Check for active orders
-        List<OrderStatus> activeStatuses = Arrays.asList(
-                OrderStatus.CREATED,
-                OrderStatus.PENDING_PAYMENT,
-                OrderStatus.PAID,
-                OrderStatus.PREPARING,
-                OrderStatus.IN_DELIVERY,
-                OrderStatus.ACCEPT
-        );
-
-        if (orderRepository.existsByStoreIdAndStatusIn(storeId, activeStatuses)) {
-            throw new AppException(ErrorCode.CANNOT_DELETE_STORE_WITH_ACTIVE_ORDERS);
+        // Check if store has ANY orders (active or completed)
+        // If store has history, we cannot delete/deactivate it easily without affecting history reporting
+        // Or we can allow deactivation but warn user. 
+        // Requirement: "khi giao hàng thành công thì đã có dữ liệu trên database thì khi muốn xóa thì sẽ lỗi ràng buộc"
+        // Implementing strict check: if ANY order exists, prevent delete.
+        
+        List<Order> orders = orderRepository.findByStoreId(storeId);
+        if (!orders.isEmpty()) {
+             // You might want to create a specific error code for this, 
+             // but reusing CANNOT_DELETE_STORE_WITH_ACTIVE_ORDERS or a generic one is fine for now.
+             // Or better: throw a clear message.
+             throw new AppException(ErrorCode.CANNOT_DELETE_STORE_WITH_ACTIVE_ORDERS); 
         }
 
         // Soft delete by changing status
