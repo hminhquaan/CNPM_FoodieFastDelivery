@@ -819,9 +819,179 @@ async function loadDashboardStats() {
 
         // Recent orders preview
         loadRecentOrders(orders.slice(0,5));
+
+        // Render Product Revenue Chart
+        renderProductRevenueChart(orders);
+        // Render Daily Revenue Chart
+        renderDailyRevenueChart(orders);
     } catch (error) {
         console.error('Error loading dashboard:', error);
     }
+}
+
+function renderProductRevenueChart(orders) {
+    const productRevenue = {};
+
+    orders.forEach(order => {
+        // Only count PAID orders
+        if (order.paymentStatus === 'PAID' && Array.isArray(order.items)) {
+            order.items.forEach(item => {
+                const name = item.productName || 'Unknown Product';
+                // Ensure price is a number
+                const price = Number(item.totalPrice) || 0;
+                productRevenue[name] = (productRevenue[name] || 0) + price;
+            });
+        }
+    });
+
+    // Sort by revenue desc and take top 10
+    const sortedProducts = Object.entries(productRevenue)
+        .sort(([,a], [,b]) => b - a)
+        .slice(0, 10);
+
+    const labels = sortedProducts.map(([name]) => name);
+    const data = sortedProducts.map(([,revenue]) => revenue);
+
+    const ctx = document.getElementById('productRevenueChart');
+    if (!ctx) return;
+
+    // Destroy existing chart if any to avoid canvas reuse issues
+    if (window.productRevenueChartInstance) {
+        window.productRevenueChartInstance.destroy();
+    }
+
+    window.productRevenueChartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Doanh thu (VNĐ)',
+                data: data,
+                backgroundColor: 'rgba(75, 192, 192, 0.6)',
+                borderColor: 'rgba(75, 192, 192, 1)',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumSignificantDigits: 3 }).format(value);
+                        }
+                    }
+                }
+            },
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            let label = context.dataset.label || '';
+                            if (label) {
+                                label += ': ';
+                            }
+                            if (context.parsed.y !== null) {
+                                label += new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(context.parsed.y);
+                            }
+                            return label;
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function renderDailyRevenueChart(orders) {
+    const dailyRevenue = {};
+    console.log('Processing daily revenue for', orders.length, 'orders');
+
+    orders.forEach(order => {
+        // Only count PAID orders
+        if (order.paymentStatus === 'PAID') {
+            let dateStr = '';
+            // Use createdAt as the primary date field
+            const dateVal = order.createdAt || order.orderDate;
+
+            if (Array.isArray(dateVal)) {
+                // Handle [yyyy, mm, dd, HH, MM, SS]
+                const [y, m, d] = dateVal;
+                dateStr = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+            } else if (dateVal) {
+                try {
+                    dateStr = new Date(dateVal).toISOString().split('T')[0];
+                } catch (e) {
+                    console.warn('Invalid date:', dateVal);
+                }
+            }
+
+            if (dateStr) {
+                const amount = Number(order.totalPayable || order.totalAmount || 0);
+                dailyRevenue[dateStr] = (dailyRevenue[dateStr] || 0) + amount;
+            }
+        }
+    });
+
+    console.log('Daily revenue data:', dailyRevenue);
+
+    // Sort by date
+    const sortedDates = Object.keys(dailyRevenue).sort();
+    const data = sortedDates.map(date => dailyRevenue[date]);
+
+    const ctx = document.getElementById('dailyRevenueChart');
+    if (!ctx) return;
+
+    // Destroy existing chart if any
+    if (window.dailyRevenueChartInstance) {
+        window.dailyRevenueChartInstance.destroy();
+    }
+
+    window.dailyRevenueChartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: sortedDates,
+            datasets: [{
+                label: 'Doanh thu theo ngày (VNĐ)',
+                data: data,
+                backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                borderColor: 'rgba(54, 162, 235, 1)',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumSignificantDigits: 3 }).format(value);
+                        }
+                    }
+                }
+            },
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            let label = context.dataset.label || '';
+                            if (label) {
+                                label += ': ';
+                            }
+                            if (context.parsed.y !== null) {
+                                label += new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(context.parsed.y);
+                            }
+                            return label;
+                        }
+                    }
+                }
+            }
+        }
+    });
 }
 
 // Load recent orders

@@ -454,7 +454,8 @@ public class OrderServiceImpl implements OrderService {
             log.warn("Delivery creation after kitchen complete skipped: {}", ex.getMessage());
         }
 
-        // Keep order in PREPARING; DeliveryService will move it to IN_DELIVERY when flight launches
+        // Update order status to IN_DELIVERY to reflect kitchen completion immediately
+        order.setStatus(OrderStatus.IN_DELIVERY);
         order.setUpdatedAt(LocalDateTime.now());
         order = orderRepository.save(order);
 

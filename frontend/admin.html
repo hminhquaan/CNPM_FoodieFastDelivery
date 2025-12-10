@@ -9,6 +9,8 @@
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="css/admin.css?v=20251119">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
         <!-- Leaflet for map preview -->
         <link
             rel="stylesheet"
@@ -171,6 +173,14 @@
             </div>
 
             <div class="dashboard-charts">
+                <div class="chart-card" style="margin-bottom: 2rem;">
+                    <h3>Thống kê doanh thu theo sản phẩm</h3>
+                    <canvas id="productRevenueChart" style="max-height: 400px;"></canvas>
+                </div>
+                <div class="chart-card" style="margin-bottom: 2rem;">
+                    <h3>Thống kê doanh thu theo ngày</h3>
+                    <canvas id="dailyRevenueChart" style="max-height: 400px;"></canvas>
+                </div>
                 <div class="chart-card">
                     <h3>Đơn hàng gần đây</h3>
                     <div id="recentOrdersTable"></div>
