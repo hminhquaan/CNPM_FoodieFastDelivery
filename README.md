@@ -119,4 +119,3 @@ Lưu ý base URL luôn có tiền tố `/home` do context-path.
 
 - Chuẩn Java 17, format theo mặc định của dự án.
 - Các package chính: `controller`, `service`, `repository`, `entity`, `dto`, `config`.
-- Pull Request chào mừng. Đừng commit `application.yaml` (đã ignore).
